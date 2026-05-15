@@ -195,7 +195,7 @@ export default function App() {
         {activeTab === "approval" && <ApprovalScreen approvals={approvals} onDecide={decideApproval} />}
         {activeTab === "request" && <RequestScreen tls={tls} teams={teams} currentUser={currentUser} onSubmit={submitApproval} approvals={approvals} />}
         {activeTab === "teams" && <TeamsScreen teams={teams} tls={tls} accounts={accounts} onAdd={addTeam} onEdit={editTeam} onDelete={deleteTeam} onChangePw={changePassword} />}
-        {activeTab === "history" && <HistoryScreen />}
+        {activeTab === "history" && <HistoryScreen tls={tls} teams={teams} />}
       </main>
     </div>
   );
@@ -315,9 +315,10 @@ function OverviewScreen({ tls, teams, approvals }) {
 }
 
 function TLScreen({ tls, teams, currentUser, onAdd, onUpdate, onDelete }) {
-  const [showForm, setShowForm] = useState(false);
-  const [editTarget, setEditTarget] = useState(null);
-  const [form, setForm] = useState({ sn: "", team: "", location: "", spec: "10m급", status: "정상", inDate: "", memo: "" });
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [editingId, setEditingId] = useState(null);
+  const [addForm, setAddForm] = useState({ sn: "", team: "", location: "", spec: "10m급", status: "정상", inDate: "", memo: "" });
+  const [editForm, setEditForm] = useState({});
   const [sortBy, setSortBy] = useState("team");
 
   const isManager = currentUser.role === "sojangnm" || currentUser.role === "admin";
@@ -335,33 +336,28 @@ function TLScreen({ tls, teams, currentUser, onAdd, onUpdate, onDelete }) {
   const checkCount = myTls.filter(t => t.status === "점검중").length;
   const brokenCount = myTls.filter(t => t.status === "고장").length;
 
-  function openAdd() {
-    setEditTarget(null);
-    setForm({ sn: "", team: "", location: "", spec: "10m급", status: "정상", inDate: "", memo: "" });
-    setShowForm(true);
+  function startEdit(t) {
+    setEditingId(t.id);
+    setEditForm({ sn: t.sn, team: t.team, location: t.location || "", spec: t.spec || "10m급", status: t.status, inDate: t.inDate || "", memo: t.memo || "" });
+    setShowAddForm(false);
   }
 
-  function openEdit(t) {
-    setEditTarget(t);
-    setForm({ sn: t.sn, team: t.team, location: t.location || "", spec: t.spec || "10m급", status: t.status, inDate: t.inDate || "", memo: t.memo || "" });
-    setShowForm(true);
+  async function handleAdd() {
+    if (!addForm.sn) { alert("일련번호를 입력해주세요."); return; }
+    if (!addForm.team) { alert("담당 팀을 선택해주세요."); return; }
+    await onAdd({ ...addForm, inDate: addForm.inDate || new Date().toISOString().slice(0, 10) });
+    setAddForm({ sn: "", team: "", location: "", spec: "10m급", status: "정상", inDate: "", memo: "" });
+    setShowAddForm(false);
   }
 
-  async function handleSave() {
-    if (!form.sn) { alert("일련번호를 입력해주세요."); return; }
-    if (!form.team) { alert("담당 팀을 선택해주세요."); return; }
-    if (editTarget) {
-      await onUpdate(editTarget.id, { sn: form.sn, team: form.team, location: form.location, spec: form.spec, status: form.status, inDate: form.inDate, memo: form.memo });
-    } else {
-      await onAdd({ ...form, inDate: form.inDate || new Date().toISOString().slice(0, 10) });
-    }
-    setShowForm(false);
-    setEditTarget(null);
+  async function handleEditSave(id) {
+    if (!editForm.sn) { alert("일련번호를 입력해주세요."); return; }
+    await onUpdate(id, editForm);
+    setEditingId(null);
   }
 
   return (
     <div>
-      {/* 팀장: 보유 대수 요약 */}
       {isTeam && (
         <div className="metric-grid" style={{ marginBottom: 16 }}>
           <div className="metric"><div className="metric-val">{myTls.length}</div><div className="metric-label">보유 TL</div></div>
@@ -371,9 +367,39 @@ function TLScreen({ tls, teams, currentUser, onAdd, onUpdate, onDelete }) {
         </div>
       )}
 
-      {isManager && <button className="btn btn-primary full mb12" onClick={openAdd}>+ 장비 등록</button>}
+      {isManager && <button className="btn btn-primary full mb12" onClick={() => { setShowAddForm(!showAddForm); setEditingId(null); }}>+ 장비 등록</button>}
 
-      {/* 소장/관리자: 정렬 */}
+      {showAddForm && (
+        <div className="card mb12">
+          <div className="card-title mb8">신규 TL 등록</div>
+          <label>일련번호</label>
+          <input value={addForm.sn} onChange={e => setAddForm({ ...addForm, sn: e.target.value })} placeholder="예: SN-20250515" />
+          <label>담당 팀</label>
+          <select value={addForm.team} onChange={e => setAddForm({ ...addForm, team: e.target.value })}>
+            <option value="">선택해주세요</option>
+            {teams.map(t => <option key={t.id}>{t.name}</option>)}
+          </select>
+          <label>위치 (층/구역)</label>
+          <input value={addForm.location} onChange={e => setAddForm({ ...addForm, location: e.target.value })} placeholder="예: B2F 서측" />
+          <label>규격</label>
+          <select value={addForm.spec} onChange={e => setAddForm({ ...addForm, spec: e.target.value })}>
+            {TL_SPECS.map(s => <option key={s}>{s}</option>)}
+          </select>
+          <label>반입일자</label>
+          <input type="date" value={addForm.inDate} onChange={e => setAddForm({ ...addForm, inDate: e.target.value })} />
+          <label>상태</label>
+          <select value={addForm.status} onChange={e => setAddForm({ ...addForm, status: e.target.value })}>
+            <option>정상</option><option>점검중</option><option>고장</option>
+          </select>
+          <label>메모</label>
+          <input value={addForm.memo} onChange={e => setAddForm({ ...addForm, memo: e.target.value })} placeholder="비고" />
+          <div className="btn-row">
+            <button className="btn btn-primary btn-sm" onClick={handleAdd}>등록</button>
+            <button className="btn btn-sm" onClick={() => setShowAddForm(false)}>취소</button>
+          </div>
+        </div>
+      )}
+
       {isManager && (
         <div className="sort-bar">
           <span className="sort-label">정렬</span>
@@ -383,74 +409,70 @@ function TLScreen({ tls, teams, currentUser, onAdd, onUpdate, onDelete }) {
         </div>
       )}
 
-      {/* 등록/수정 폼 */}
-      {showForm && (
-        <div className="card mb12">
-          <div className="card-title mb8">{editTarget ? "장비 수정" : "신규 TL 등록"}</div>
-          <label>일련번호</label>
-          <input value={form.sn} onChange={e => setForm({ ...form, sn: e.target.value })} placeholder="예: SN-20250515" />
-          <label>담당 팀</label>
-          <select value={form.team} onChange={e => setForm({ ...form, team: e.target.value })}>
-            <option value="">선택해주세요</option>
-            {teams.map(t => <option key={t.id}>{t.name}</option>)}
-          </select>
-          <label>위치 (층/구역)</label>
-          <input value={form.location} onChange={e => setForm({ ...form, location: e.target.value })} placeholder="예: B2F 서측" />
-          <label>규격</label>
-          <select value={form.spec} onChange={e => setForm({ ...form, spec: e.target.value })}>
-            {TL_SPECS.map(s => <option key={s}>{s}</option>)}
-          </select>
-          <label>반입일자</label>
-          <input type="date" value={form.inDate} onChange={e => setForm({ ...form, inDate: e.target.value })} />
-          <label>상태</label>
-          <select value={form.status} onChange={e => setForm({ ...form, status: e.target.value })}>
-            <option>정상</option><option>점검중</option><option>고장</option>
-          </select>
-          <label>메모</label>
-          <input value={form.memo} onChange={e => setForm({ ...form, memo: e.target.value })} placeholder="비고" />
-          <div className="btn-row">
-            <button className="btn btn-primary btn-sm" onClick={handleSave}>{editTarget ? "저장" : "등록"}</button>
-            <button className="btn btn-sm" onClick={() => { setShowForm(false); setEditTarget(null); }}>취소</button>
-          </div>
-        </div>
-      )}
-
       {sorted.length === 0 && <div className="empty">등록된 장비가 없습니다.</div>}
       {sorted.map(t => (
         <div key={t.id} className="card">
-          <div className="card-header">
+          {editingId === t.id ? (
             <div>
-              <div className="card-title">
-                {t.sn}
-                {t.spec && <span className="pill pill-gray" style={{ marginLeft: 6 }}>{t.spec}</span>}
+              <div className="card-title mb8" style={{ color: "#534AB7" }}>✏ 장비 수정 중</div>
+              <label>일련번호</label>
+              <input value={editForm.sn} onChange={e => setEditForm({ ...editForm, sn: e.target.value })} />
+              <label>담당 팀</label>
+              <select value={editForm.team} onChange={e => setEditForm({ ...editForm, team: e.target.value })}>
+                {teams.map(t2 => <option key={t2.id}>{t2.name}</option>)}
+              </select>
+              <label>위치 (층/구역)</label>
+              <input value={editForm.location} onChange={e => setEditForm({ ...editForm, location: e.target.value })} placeholder="예: B2F 서측" />
+              <label>규격</label>
+              <select value={editForm.spec} onChange={e => setEditForm({ ...editForm, spec: e.target.value })}>
+                {TL_SPECS.map(s => <option key={s}>{s}</option>)}
+              </select>
+              <label>반입일자</label>
+              <input type="date" value={editForm.inDate} onChange={e => setEditForm({ ...editForm, inDate: e.target.value })} />
+              <label>상태</label>
+              <select value={editForm.status} onChange={e => setEditForm({ ...editForm, status: e.target.value })}>
+                <option>정상</option><option>점검중</option><option>고장</option>
+              </select>
+              <label>메모</label>
+              <input value={editForm.memo} onChange={e => setEditForm({ ...editForm, memo: e.target.value })} placeholder="비고" />
+              <div className="btn-row">
+                <button className="btn btn-primary btn-sm" onClick={() => handleEditSave(t.id)}>저장</button>
+                <button className="btn btn-sm" onClick={() => setEditingId(null)}>취소</button>
               </div>
-              <div className="card-sub">{t.team} · {t.location}</div>
             </div>
-            <span className="status-tag">
-              <span className={`dot dot-${t.status === "정상" ? "ok" : t.status === "고장" ? "broken" : "check"}`} />
-              {t.status}
-            </span>
-          </div>
-          <div className="card-meta">반입일: {t.inDate}{t.memo && " · " + t.memo}</div>
-          {t.todayUse && <div className="alert alert-info mb8">✓ 금일 사용중 — {t.todayPurpose}</div>}
-
-          {/* 소장/관리자: 수정 + 삭제 */}
-          {isManager && (
-            <div className="btn-row">
-              <button className="btn btn-sm" onClick={() => openEdit(t)}>✏ 수정</button>
-              <button className="btn btn-danger btn-sm" onClick={() => { if (window.confirm("장비를 삭제하시겠습니까?")) onDelete(t.id); }}>삭제</button>
-            </div>
-          )}
-
-          {/* 팀장: 위치만 수정 */}
-          {isTeam && (
-            <div style={{ marginTop: 8 }}>
-              <input
-                style={{ margin: 0, fontSize: 12 }}
-                defaultValue={t.location}
-                placeholder="위치 수정 (예: B1F 동측)"
-                onBlur={e => { if (e.target.value !== t.location) onUpdate(t.id, { location: e.target.value }); }}
-              />
+          ) : (
+            <div>
+              <div className="card-header">
+                <div>
+                  <div className="card-title">
+                    {t.sn}
+                    {t.spec && <span className="pill pill-gray" style={{ marginLeft: 6 }}>{t.spec}</span>}
+                  </div>
+                  <div className="card-sub">{t.team} · {t.location}</div>
+                </div>
+                <span className="status-tag">
+                  <span className={`dot dot-${t.status === "정상" ? "ok" : t.status === "고장" ? "broken" : "check"}`} />
+                  {t.status}
+                </span>
+              </div>
+              <div className="card-meta">반입일: {t.inDate}{t.memo && " · " + t.memo}</div>
+              {t.todayUse && <div className="alert alert-info mb8">✓ 금일 사용중 — {t.todayPurpose}</div>}
+              {isManager && (
+                <div className="btn-row">
+                  <button className="btn btn-sm" onClick={() => startEdit(t)}>✏ 수정</button>
+                  <button className="btn btn-danger btn-sm" onClick={() => { if (window.confirm("장비를 삭제하시겠습니까?")) onDelete(t.id); }}>삭제</button>
+                </div>
+              )}
+              {isTeam && (
+                <div style={{ marginTop: 8 }}>
+                  <input
+                    style={{ margin: 0, fontSize: 12 }}
+                    defaultValue={t.location}
+                    placeholder="위치 수정 (예: B1F 동측)"
+                    onBlur={e => { if (e.target.value !== t.location) onUpdate(t.id, { location: e.target.value }); }}
+                  />
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -592,30 +614,49 @@ function RequestScreen({ tls, teams, currentUser, onSubmit, approvals }) {
   );
 }
 
-function HistoryScreen() {
+function HistoryScreen({ tls, teams }) {
   const [history, setHistory] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
 
-  useEffect(() => {
-    async function fetchHistory() {
-      const snap = await getDocs(query(collection(db, "history"), orderBy("date", "desc")));
-      setHistory(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-      setLoading(false);
-    }
-    fetchHistory();
-  }, []);
+  useEffect(() => { fetchHistory(); }, []);
+
+  async function fetchHistory() {
+    setLoading(true);
+    const snap = await getDocs(query(collection(db, "history"), orderBy("date", "desc")));
+    setHistory(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    setLoading(false);
+  }
+
+  async function saveToday() {
+    if (!window.confirm("오늘 현황을 기록하시겠습니까?\n이미 오늘 기록이 있으면 덮어씁니다.")) return;
+    setSaving(true);
+    const today = new Date().toISOString().slice(0, 10);
+    const snapshot = teams.map(team => ({
+      team: team.name,
+      total: tls.filter(t => t.team === team.name).length,
+      used: tls.filter(t => t.team === team.name && t.todayUse).length,
+    }));
+    await setDoc(doc(db, "history", today), { date: today, data: snapshot, savedAt: serverTimestamp() });
+    await fetchHistory();
+    setSaving(false);
+    alert("오늘 현황이 저장되었습니다.");
+  }
 
   if (loading) return <div className="empty">불러오는 중...</div>;
-  if (history.length === 0) return (
-    <div className="empty">
-      아직 기록된 데이터가 없습니다.<br />
-      <span style={{ fontSize: 12, marginTop: 8, display: "block" }}>매일 자동으로 저장됩니다.</span>
-    </div>
-  );
 
   return (
     <div>
+      <button className="btn btn-primary full mb12" onClick={saveToday} disabled={saving}>
+        {saving ? "저장 중..." : "📋 오늘 현황 기록 저장"}
+      </button>
       <div className="section-title">일별 TL 가동률</div>
+      {history.length === 0 && (
+        <div className="empty">
+          아직 기록된 데이터가 없습니다.<br />
+          <span style={{ fontSize: 12, marginTop: 8, display: "block" }}>위 버튼으로 오늘 현황을 저장해 주세요.</span>
+        </div>
+      )}
       {history.map(h => {
         const totalAll = h.data?.reduce((s, d) => s + (d.total || 0), 0) || 0;
         const usedAll = h.data?.reduce((s, d) => s + (d.used || 0), 0) || 0;
@@ -651,6 +692,7 @@ function HistoryScreen() {
     </div>
   );
 }
+
 
 function TeamsScreen({ teams, tls, accounts, onAdd, onEdit, onDelete, onChangePw }) {
   const [modal, setModal] = useState(null);
