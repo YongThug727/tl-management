@@ -96,7 +96,7 @@ export default function App() {
     const acc = accounts.find(a => a.id === accountId);
     if (!acc) return "존재하지 않는 계정입니다.";
     if (acc.pw !== pw) return "비밀번호가 올바르지 않습니다.";
-    const user = { id: accountId, role: acc.role, label: acc.label || accountId, team: acc.team || null, bl: acc.bl || null };
+    const user = { id: accountId, role: acc.role, label: acc.label || accountId, team: acc.team || null, bl: acc.bl || null, teamName: acc.teamName || null };
     setCurrentUser(user);
     localStorage.setItem("tl_user", JSON.stringify(user));
     setActiveTab(NAV_TABS[acc.role][0].id);
