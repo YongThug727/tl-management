@@ -291,3 +291,25 @@ textarea { resize: none; }
 
 /* ── 규격 필 ── */
 .pill-gray { background: #f0f0f0; color: #555; border-color: #e0e0e0; }
+
+/* ── 로그인 그룹 버튼 ── */
+.group-btn {
+  display: block; width: 100%;
+  padding: 14px 16px; margin-bottom: 10px;
+  border: 1px solid #ddd; border-radius: 12px;
+  background: #fff; cursor: pointer;
+  font-size: 15px; font-weight: 500; color: #1a1a1a;
+  text-align: left; transition: all 0.15s;
+}
+.group-btn:hover { background: #f5f4ff; border-color: #534AB7; }
+
+/* ── BL 배지 ── */
+.badge-bl { background: #E6F1FB; color: #0C447C; }
+.pill-bl { background: #E6F1FB; color: #0C447C; border-color: #b5d4f4; }
+.offline-badge {
+  font-size: 11px; padding: 3px 8px; border-radius: 20px;
+  background: #FAEEDA; color: #633806; font-weight: 500;
+}
+
+/* ── 드라이버 화면 ── */
+.badge-driver { background: #FFF3E0; color: #E65100; }
