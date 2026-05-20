@@ -403,56 +403,203 @@ function LoginScreen({ accounts, onLogin }) {
   );
 }
 
+// ── TL 카드 (팝업용 공통 컴포넌트) ──────────────────────────────────────
+function TLCard({ t }) {
+  const dotClass = t.status === "정상" ? "ok" : t.status === "고장" ? "broken" : "check";
+  return (
+    <div className="card" style={{ marginBottom: 8 }}>
+      <div className="card-header">
+        <div>
+          <div className="card-title" style={{ fontSize: 15 }}>{t.sn}</div>
+          <div className="card-sub">{t.location} · {t.team} · {t.bl}</div>
+        </div>
+        <span className="status-tag">
+          <span className={`dot dot-${dotClass}`} />{t.status}
+        </span>
+      </div>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 6 }}>
+        {t.spec && <span className="pill pill-gray">{t.spec}</span>}
+        {t.todayUse && <span className="pill pill-green">금일사용</span>}
+        {t.todayUse && t.todayPurpose && <span className="pill pill-purple">{t.todayPurpose}</span>}
+        {t.isRented && <span className="pill pill-amber">대여중</span>}
+      </div>
+    </div>
+  );
+}
+
+// ── 팝업 모달 ─────────────────────────────────────────────────────────────
+function Popup({ title, count, children, onClose }) {
+  return (
+    <div className="modal-bg" onClick={onClose}>
+      <div className="modal" style={{ maxHeight: "80vh", display: "flex", flexDirection: "column" }} onClick={e => e.stopPropagation()}>
+        <div className="modal-title">{title}</div>
+        <div className="alert alert-info mb12" style={{ fontSize: 13, padding: "8px 12px" }}>총 {count}대</div>
+        <div style={{ overflowY: "auto", flex: 1 }}>
+          {count === 0
+            ? <div className="empty">해당 상태의 TL이 없습니다.</div>
+            : children}
+        </div>
+        <button className="btn full" style={{ marginTop: 12 }} onClick={onClose}>닫기</button>
+      </div>
+    </div>
+  );
+}
+
+function TeamPopup({ title, teams, tls, onClose }) {
+  return (
+    <div className="modal-bg" onClick={onClose}>
+      <div className="modal" style={{ maxHeight: "80vh", display: "flex", flexDirection: "column" }} onClick={e => e.stopPropagation()}>
+        <div className="modal-title">{title}</div>
+        <div className="alert alert-info mb12" style={{ fontSize: 13, padding: "8px 12px" }}>등록 팀 {teams.length}개</div>
+        <div style={{ overflowY: "auto", flex: 1 }}>
+          {teams.map(team => {
+            const cnt = tls.filter(t => t.team === team.name).length;
+            return (
+              <div key={team.id} className="team-row" style={{ borderBottom: "1px solid #f0f0f0", paddingBottom: 10, marginBottom: 10 }}>
+                <div className="team-avatar">{team.name.slice(0, 2)}</div>
+                <div className="flex1">
+                  <div className="tl-sn">{team.name}</div>
+                  {team.leader && <div className="tl-meta">{team.leader}</div>}
+                </div>
+                <span className="pill pill-purple">TL {cnt}대</span>
+              </div>
+            );
+          })}
+        </div>
+        <button className="btn full" style={{ marginTop: 12 }} onClick={onClose}>닫기</button>
+      </div>
+    </div>
+  );
+}
+
 // ── 현황 ──────────────────────────────────────────────────────────────────
 function OverviewScreen({ tls, teams, approvals, currentUser }) {
-  const [blFilter, setBlFilter] = useState("전체");
+  const [popup, setPopup] = useState(null); // null | {type, bl}
+  const [expandedTeams, setExpandedTeams] = useState({});
 
-  const filterTls = (bl) => bl === "전체" ? tls : tls.filter(t => {
+  const isSojangnm = currentUser.role === "sojangnm";
+
+  const getBlTls = (bl) => bl === "전체" ? tls : tls.filter(t => {
     const team = teams.find(tm => tm.name === t.team);
     return team?.bl === bl;
   });
+  const getBlTeams = (bl) => bl === "전체" ? teams : teams.filter(t => t.bl === bl);
 
-  const filterTeams = (bl) => bl === "전체" ? teams : teams.filter(t => t.bl === bl);
+  function toggleTeam(name) {
+    setExpandedTeams(prev => ({ ...prev, [name]: !prev[name] }));
+  }
 
-  const pending = approvals.filter(a => a.status === "대기").length;
-  const isSojangnm = currentUser.role === "sojangnm";
+  // 팝업 TL 목록 계산
+  function getPopupTls() {
+    if (!popup) return [];
+    const baseTls = getBlTls(popup.bl);
+    if (popup.type === "전체") return baseTls;
+    if (popup.type === "금일사용") return baseTls.filter(t => t.todayUse);
+    if (popup.type === "고장") return baseTls.filter(t => t.status === "고장");
+    if (popup.type === "점검") return baseTls.filter(t => t.status === "점검중");
+    if (popup.type === "정상") return baseTls.filter(t => t.status === "정상");
+    if (popup.type === "미사용") return baseTls.filter(t => !t.todayUse);
+    if (popup.type === "결재대기") return [];
+    return [];
+  }
 
-  function MetricsFor({ bl }) {
-    const ftls = filterTls(bl);
-    const fteams = filterTeams(bl);
+  function MetricsBlock({ bl }) {
+    const ftls = getBlTls(bl);
+    const fteams = getBlTeams(bl);
     const total = ftls.length;
     const todayUse = ftls.filter(t => t.todayUse).length;
     const broken = ftls.filter(t => t.status === "고장").length;
+    const inCheck = ftls.filter(t => t.status === "점검중").length;
+    const notUsed = ftls.filter(t => !t.todayUse).length;
     const fpending = approvals.filter(a => a.status === "대기" && (bl === "전체" || a.bl === bl)).length;
+    const bl1Teams = getBlTeams("1BL");
+    const bl2Teams = getBlTeams("2BL");
+
     return (
       <>
-        {bl !== "전체" && <div className="section-title">{bl} 현황</div>}
+        {/* 지표 카드 */}
         <div className="metric-grid">
-          <div className="metric"><div className="metric-val">{total}</div><div className="metric-label">전체 TL</div></div>
-          <div className="metric"><div className="metric-val green">{todayUse}</div><div className="metric-label">금일 사용</div></div>
-          <div className="metric"><div className="metric-val red">{broken}</div><div className="metric-label">고장</div></div>
-          <div className="metric"><div className="metric-val amber">{fpending}</div><div className="metric-label">결재 대기</div></div>
+          <div className="metric metric-click" onClick={() => setPopup({ type: "전체", bl })}>
+            <div className="metric-val">{total}</div><div className="metric-label">전체 TL</div>
+          </div>
+          <div className="metric metric-click" onClick={() => setPopup({ type: "금일사용", bl })}>
+            <div className="metric-val green">{todayUse}</div><div className="metric-label">금일 사용</div>
+          </div>
+          {bl === "전체" && isSojangnm ? (
+            <>
+              <div className="metric metric-click" onClick={() => setPopup({ type: "1BL팀", bl: "1BL" })}>
+                <div className="metric-val">{bl1Teams.length}</div><div className="metric-label">1공구 팀</div>
+              </div>
+              <div className="metric metric-click" onClick={() => setPopup({ type: "2BL팀", bl: "2BL" })}>
+                <div className="metric-val">{bl2Teams.length}</div><div className="metric-label">2공구 팀</div>
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="metric metric-click" onClick={() => setPopup({ type: "고장", bl })}>
+                <div className="metric-val red">{broken}</div><div className="metric-label">고장</div>
+              </div>
+              <div className="metric metric-click" onClick={() => setPopup({ type: "결재대기", bl })}>
+                <div className="metric-val amber">{fpending}</div><div className="metric-label">결재 대기</div>
+              </div>
+            </>
+          )}
         </div>
+
+        {/* 상태별 장비 */}
+        <div className="section-title">상태별 장비</div>
+        <div className="card mb12">
+          {[
+            { label: "정상", color: "#1D9E75", count: ftls.filter(t => t.status === "정상").length, type: "정상" },
+            { label: "점검", color: "#EF9F27", count: inCheck, type: "점검" },
+            { label: "고장", color: "#E24B4A", count: broken, type: "고장" },
+            { label: "미사용", color: "#aaa", count: notUsed, type: "미사용" },
+          ].map((item, i, arr) => (
+            <div key={item.label}
+              className="metric-click"
+              style={{ display: "flex", alignItems: "center", padding: "10px 4px", borderBottom: i < arr.length - 1 ? "1px solid #f0f0f0" : "none", cursor: "pointer" }}
+              onClick={() => setPopup({ type: item.type, bl })}>
+              <span className={`dot dot-${item.label === "정상" ? "ok" : item.label === "고장" ? "broken" : item.label === "점검" ? "check" : ""}`}
+                style={item.label === "미사용" ? { background: "#ccc" } : {}} />
+              <span style={{ fontSize: 14, fontWeight: 500, marginLeft: 8, flex: 1 }}>{item.label}</span>
+              <span className="pill">{item.count}대</span>
+            </div>
+          ))}
+        </div>
+
+        {/* 팀별 현황 (접기/펼치기) */}
         <div className="section-title">팀별 현황</div>
         {fteams.map(team => {
           const myTls = tls.filter(t => t.team === team.name);
           const use = myTls.filter(t => t.todayUse).length;
+          const expanded = expandedTeams[team.name] !== false; // 기본 펼침
           return (
-            <div key={team.id} className="card">
-              <div className="card-header">
-                <span className="card-title">{team.name}</span>
-                <span className="pill">보유 {myTls.length}대 · 금일 {use}대 사용</span>
-              </div>
-              {myTls.length === 0 && <p className="empty-sm">보유 장비 없음</p>}
-              {myTls.map(t => (
-                <div key={t.id} className="tl-row">
-                  <span className={`dot dot-${t.status === "정상" ? "ok" : t.status === "고장" ? "broken" : "check"}`} />
-                  <span className="tl-sn">{t.sn}</span>
-                  {t.spec && <span className="pill pill-gray">{t.spec}</span>}
-                  <span className="tl-meta">{t.location}</span>
-                  {t.todayUse && <span className="pill pill-purple">사용중</span>}
+            <div key={team.id} className="card" style={{ marginBottom: 8 }}>
+              <div className="card-header" style={{ cursor: "pointer", marginBottom: expanded ? 8 : 0 }}
+                onClick={() => toggleTeam(team.name)}>
+                <div>
+                  <span className="card-title">{team.name}</span>
+                  {team.bl && <span className="pill pill-bl" style={{ marginLeft: 6 }}>{team.bl}</span>}
                 </div>
-              ))}
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <span className="pill">보유 {myTls.length}대 · {use}대 사용</span>
+                  <span style={{ fontSize: 12, color: "#aaa" }}>{expanded ? "▲" : "▼"}</span>
+                </div>
+              </div>
+              {expanded && (
+                <>
+                  {myTls.length === 0 && <p className="empty-sm">보유 장비 없음</p>}
+                  {myTls.map(t => (
+                    <div key={t.id} className="tl-row">
+                      <span className={`dot dot-${t.status === "정상" ? "ok" : t.status === "고장" ? "broken" : "check"}`} />
+                      <span className="tl-sn">{t.sn}</span>
+                      {t.spec && <span className="pill pill-gray">{t.spec}</span>}
+                      <span className="tl-meta">{t.location}</span>
+                      {t.todayUse && <span className="pill pill-purple">사용중</span>}
+                    </div>
+                  ))}
+                </>
+              )}
             </div>
           );
         })}
@@ -460,38 +607,53 @@ function OverviewScreen({ tls, teams, approvals, currentUser }) {
     );
   }
 
+  const popupTls = getPopupTls();
+  const isTeamPopup = popup?.type === "1BL팀" || popup?.type === "2BL팀";
+  const isApprovalPopup = popup?.type === "결재대기";
+  const pendingApprovals = approvals.filter(a => a.status === "대기" && (popup?.bl === "전체" || a.bl === popup?.bl));
+
   return (
     <div>
-      {isSojangnm && (
-        <div className="sort-bar" style={{ marginBottom: 16 }}>
-          <span className="sort-label">공구</span>
-          {["전체", "1BL", "2BL"].map(bl => (
-            <button key={bl} className={`sort-btn${blFilter === bl ? " active" : ""}`} onClick={() => setBlFilter(bl)}>{bl}</button>
-          ))}
+      <MetricsBlock bl="전체" />
+
+      {/* 팝업 */}
+      {popup && !isTeamPopup && !isApprovalPopup && (
+        <Popup title={`${popup.type} TL 목록`} count={popupTls.length} onClose={() => setPopup(null)}>
+          {popupTls.map(t => <TLCard key={t.id} t={t} />)}
+        </Popup>
+      )}
+      {popup && isTeamPopup && (
+        <TeamPopup
+          title={`${popup.bl} 팀 현황`}
+          teams={getBlTeams(popup.bl)}
+          tls={tls}
+          onClose={() => setPopup(null)}
+        />
+      )}
+      {popup && isApprovalPopup && (
+        <div className="modal-bg" onClick={() => setPopup(null)}>
+          <div className="modal" style={{ maxHeight: "80vh", display: "flex", flexDirection: "column" }} onClick={e => e.stopPropagation()}>
+            <div className="modal-title">결재 대기 목록</div>
+            <div className="alert alert-info mb12" style={{ fontSize: 13, padding: "8px 12px" }}>총 {pendingApprovals.length}건</div>
+            <div style={{ overflowY: "auto", flex: 1 }}>
+              {pendingApprovals.length === 0
+                ? <div className="empty">대기 중인 결재가 없습니다.</div>
+                : pendingApprovals.map(a => {
+                    const typeClass = a.type === "반입" ? "type-in" : a.type === "반출" ? "type-out" : "type-move";
+                    return (
+                      <div key={a.id} className="approval-card">
+                        <span className={`approval-type ${typeClass}`}>{a.type}</span>
+                        <div className="approval-title">{a.from}{a.to ? ` → ${a.to}` : ""}</div>
+                        <div className="approval-reason">{a.reason}</div>
+                        <div className="approval-meta">{a.requester} · {a.createdAt?.toDate?.().toLocaleDateString("ko-KR") || "-"}</div>
+                      </div>
+                    );
+                  })}
+            </div>
+            <button className="btn full" style={{ marginTop: 12 }} onClick={() => setPopup(null)}>닫기</button>
+          </div>
         </div>
       )}
-      {isSojangnm && blFilter === "전체" ? (
-        <>
-          <MetricsFor bl="전체" />
-          <div className="section-title" style={{ marginTop: 24 }}>1BL 요약</div>
-          <div className="metric-grid">
-            {(() => { const ftls = filterTls("1BL"); return (<>
-              <div className="metric"><div className="metric-val">{ftls.length}</div><div className="metric-label">1BL 전체</div></div>
-              <div className="metric"><div className="metric-val green">{ftls.filter(t=>t.todayUse).length}</div><div className="metric-label">금일 사용</div></div>
-            </>); })()}
-          </div>
-          <div className="section-title">2BL 요약</div>
-          <div className="metric-grid">
-            {(() => { const ftls = filterTls("2BL"); return (<>
-              <div className="metric"><div className="metric-val">{ftls.length}</div><div className="metric-label">2BL 전체</div></div>
-              <div className="metric"><div className="metric-val green">{ftls.filter(t=>t.todayUse).length}</div><div className="metric-label">금일 사용</div></div>
-            </>); })()}
-          </div>
-        </>
-      ) : (
-        <MetricsFor bl={blFilter} />
-      )}
-      {pending > 0 && <div className="alert alert-warn">⚠ 결재 대기 {pending}건이 있습니다.</div>}
     </div>
   );
 }
@@ -514,7 +676,20 @@ function TLScreen({ tls, teams, currentUser, onAdd, onUpdate, onDelete }) {
       ? tls.filter(t => { const team = teams.find(tm => tm.name === t.team); return team?.bl === currentUser.bl; })
       : [...tls];
 
-  const filtered = myTls.filter(t => !search || (t.sn || "").toLowerCase().includes(search.toLowerCase()));
+  const [statusFilter, setStatusFilter] = useState("전체");
+  const STATUS_FILTERS = ["전체", "정상", "점검", "고장", "사용안함"];
+
+  const filtered = myTls.filter(t => {
+    const matchSearch = !search || (t.sn || "").toLowerCase().includes(search.toLowerCase());
+    const matchStatus = statusFilter === "전체"
+      ? true
+      : statusFilter === "정상" ? t.status === "정상"
+      : statusFilter === "점검" ? t.status === "점검중"
+      : statusFilter === "고장" ? t.status === "고장"
+      : statusFilter === "사용안함" ? !t.todayUse
+      : true;
+    return matchSearch && matchStatus;
+  });
 
   const sorted = [...filtered].sort((a, b) => {
     if (sortBy === "team") return (a.team || "").localeCompare(b.team || "");
@@ -570,8 +745,14 @@ function TLScreen({ tls, teams, currentUser, onAdd, onUpdate, onDelete }) {
         value={search}
         onChange={e => setSearch(e.target.value)}
         placeholder="🔍 일련번호 검색 (일부만 입력해도 됩니다)"
-        style={{ marginBottom: 10 }}
+        style={{ marginBottom: 8 }}
       />
+      {/* 상태 필터 탭 */}
+      <div className="sort-bar" style={{ marginBottom: 10 }}>
+        {STATUS_FILTERS.map(f => (
+          <button key={f} className={`sort-btn${statusFilter === f ? " active" : ""}`} onClick={() => setStatusFilter(f)}>{f}</button>
+        ))}
+      </div>
 
       {showAddForm && (
         <div className="card mb12">
@@ -662,7 +843,10 @@ function TLScreen({ tls, teams, currentUser, onAdd, onUpdate, onDelete }) {
               </div>
               <div className="card-meta">반입일: {t.inDate}{t.memo && " · " + t.memo}</div>
               {t.isRented && <div className="alert alert-warn mb8" style={{padding:"6px 10px",fontSize:12}}>🔄 대여중 (원소유: {t.rentedFrom})</div>}
-              {t.todayUse && <div className="alert alert-info mb8">✓ 금일 사용중 — {t.todayPurpose}</div>}
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 8 }}>
+                {t.todayUse && <span className="pill pill-green">금일사용</span>}
+                {t.todayUse && t.todayPurpose && <span className="pill pill-purple">{t.todayPurpose}</span>}
+              </div>
               {isManager && (
                 <div className="btn-row">
                   <button className="btn btn-sm" onClick={() => startEdit(t)}>✏ 수정</button>

@@ -313,3 +313,14 @@ textarea { resize: none; }
 
 /* ── 드라이버 화면 ── */
 .badge-driver { background: #FFF3E0; color: #E65100; }
+
+/* ── 클릭 가능한 지표 ── */
+.metric-click {
+  cursor: pointer;
+  transition: transform 0.1s, box-shadow 0.1s;
+}
+.metric-click:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(83,74,183,0.15);
+}
+.metric-click:active { transform: translateY(0); }
