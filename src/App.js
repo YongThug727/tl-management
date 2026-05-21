@@ -1480,27 +1480,45 @@ function HistoryScreen({ tls, teams, workLogs, currentUser }) {
 function DriverScreen({ currentUser, tls, workLogs, onStart, onEnd }) {
   const myTeamTls = tls.filter(t => t.team === currentUser.teamName);
   const todayStr = new Date().toISOString().slice(0, 10);
-  const myLogs = workLogs.filter(l => l.driverId === currentUser.id && l.date === todayStr);
-  const activeLog = myLogs.find(l => l.endedAt === null);
+
+  // 오프라인 종료 처리를 위한 로컬 상태
+  const [localEnded, setLocalEnded] = useState(false); // 오프라인 종료 즉시 반영용
   const [elapsed, setElapsed] = useState(0);
   const timerRef = useRef(null);
+  const [viewDate, setViewDate] = useState(todayStr); // 조회 날짜
+  const [showDatePicker, setShowDatePicker] = useState(false);
+
+  // 오늘 로그
+  const myTodayLogs = workLogs.filter(l => l.driverId === currentUser.id && l.date === todayStr);
+  // 조회 날짜 로그
+  const myViewLogs = workLogs.filter(l => l.driverId === currentUser.id && l.date === viewDate);
+  // 진행 중 로그 (로컬 종료 상태 반영)
+  const activeLog = localEnded ? null : myTodayLogs.find(l => l.endedAt === null);
+
+  // 날짜 파싱 헬퍼
+  function parseTime(val) {
+    if (!val) return null;
+    if (typeof val === 'string') return new Date(val);
+    if (val?.toDate) return val.toDate();
+    return null;
+  }
+
+  function fmtTime(val) {
+    const d = parseTime(val);
+    return d ? d.toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" }) : "-";
+  }
+
+  function fmtDate(dateStr) {
+    if (!dateStr) return "";
+    const d = new Date(dateStr);
+    return d.toLocaleDateString("ko-KR", { month: "long", day: "numeric", weekday: "short" });
+  }
 
   useEffect(() => {
     if (activeLog) {
-      // startedAt이 ISO 문자열 또는 Timestamp 모두 안전하게 처리
-      let start;
-      if (!activeLog.startedAt) {
-        start = new Date(); // fallback: 지금부터
-      } else if (typeof activeLog.startedAt === 'string') {
-        start = new Date(activeLog.startedAt);
-      } else if (activeLog.startedAt?.toDate) {
-        start = activeLog.startedAt.toDate();
-      } else {
-        start = new Date();
-      }
-      // 시작 시간이 미래이거나 비정상이면 지금으로 초기화
+      setLocalEnded(false);
+      let start = parseTime(activeLog.startedAt) || new Date();
       if (isNaN(start.getTime()) || start > new Date()) start = new Date();
-
       timerRef.current = setInterval(() => {
         setElapsed(Math.floor((new Date() - start) / 1000));
       }, 1000);
@@ -1509,9 +1527,19 @@ function DriverScreen({ currentUser, tls, workLogs, onStart, onEnd }) {
       setElapsed(0);
     }
     return () => clearInterval(timerRef.current);
-  }, [activeLog?.id]);
+  }, [activeLog?.id, localEnded]);
 
-  const todayMin = myLogs.filter(l => l.durationMin != null).reduce((s, l) => s + l.durationMin, 0);
+  // 종료 처리: 로컬 즉시 반영 후 Firebase 저장
+  async function handleEnd() {
+    if (!activeLog) return;
+    if (!window.confirm("작업을 종료하시겠습니까?")) return;
+    clearInterval(timerRef.current); // 타이머 즉시 정지
+    setLocalEnded(true);             // 화면 즉시 종료 상태로
+    setElapsed(0);
+    await onEnd(activeLog.id, activeLog.startedAt); // Firebase 백그라운드 저장
+  }
+
+  const todayMin = myTodayLogs.filter(l => l.durationMin != null).reduce((s, l) => s + l.durationMin, 0);
   const todayRate = Math.min(Math.round((todayMin / (WORK_HOURS * 60)) * 100), 100);
 
   function fmt(sec) {
@@ -1521,8 +1549,12 @@ function DriverScreen({ currentUser, tls, workLogs, onStart, onEnd }) {
     return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
   }
 
+  // 보유 날짜 목록 (조회용)
+  const allDates = [...new Set(workLogs.filter(l => l.driverId === currentUser.id).map(l => l.date))].sort((a,b) => b.localeCompare(a));
+
   return (
     <div>
+      {/* 작업 시작/종료 카드 */}
       <div className="card" style={{ textAlign: "center", padding: "24px 16px", marginBottom: 16 }}>
         <div style={{ fontSize: 13, color: "#999", marginBottom: 4 }}>{currentUser.label}</div>
         <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 16 }}>
@@ -1537,7 +1569,7 @@ function DriverScreen({ currentUser, tls, workLogs, onStart, onEnd }) {
               {fmt(elapsed)}
             </div>
             <button className="btn btn-danger" style={{ width: "100%", padding: "14px", fontSize: 16 }}
-              onClick={() => { if (window.confirm("작업을 종료하시겠습니까?")) onEnd(activeLog.id, activeLog.startedAt); }}>
+              onClick={handleEnd}>
               ⏹ 작업 종료
             </button>
           </>
@@ -1547,7 +1579,7 @@ function DriverScreen({ currentUser, tls, workLogs, onStart, onEnd }) {
             {myTeamTls.length === 0 && <div style={{ fontSize: 13, color: "#E24B4A", marginBottom: 16 }}>배정된 TL이 없습니다.</div>}
             {myTeamTls.map(tl => (
               <button key={tl.id} className="group-btn" style={{ marginBottom: 8, padding: "12px 14px" }}
-                onClick={() => { if (window.confirm(`${tl.sn} 작업을 시작하시겠습니까?`)) onStart(currentUser, tl.id); }}>
+                onClick={() => { if (window.confirm(`${tl.sn} 작업을 시작하시겠습니까?`)) { setLocalEnded(false); onStart(currentUser, tl.id); } }}>
                 🏗 {tl.sn} <span style={{ fontSize: 12, color: "#aaa", marginLeft: 6 }}>{tl.location}</span>
               </button>
             ))}
@@ -1557,7 +1589,7 @@ function DriverScreen({ currentUser, tls, workLogs, onStart, onEnd }) {
 
       {/* 오늘 누적 */}
       <div className="card" style={{ marginBottom: 16 }}>
-        <div className="card-title mb8">오늘 작업 현황</div>
+        <div className="card-title mb8">오늘 작업 현황 <span style={{ fontSize: 12, color: "#aaa", fontWeight: 400 }}>({fmtDate(todayStr)})</span></div>
         <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, marginBottom: 8 }}>
           <span>총 {Math.floor(todayMin / 60)}시간 {todayMin % 60}분 / 기준 {WORK_HOURS}시간</span>
           <span style={{ fontWeight: 600, color: todayRate >= 50 ? "#1D9E75" : "#BA7517" }}>{todayRate}%</span>
@@ -1567,10 +1599,33 @@ function DriverScreen({ currentUser, tls, workLogs, onStart, onEnd }) {
         </div>
       </div>
 
-      {/* 오늘 기록 목록 */}
-      <div className="section-title">오늘 작업 이력</div>
-      {myLogs.length === 0 && <div className="empty">오늘 작업 기록이 없습니다.</div>}
-      {myLogs.map((l, i) => (
+      {/* 작업 이력 조회 */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+        <div className="section-title" style={{ margin: 0 }}>
+          작업 이력 — {viewDate === todayStr ? "오늘" : fmtDate(viewDate)}
+        </div>
+        <button className="btn btn-sm" onClick={() => setShowDatePicker(!showDatePicker)}>
+          {showDatePicker ? "닫기" : "날짜 조회"}
+        </button>
+      </div>
+
+      {/* 날짜 선택 */}
+      {showDatePicker && (
+        <div className="card mb12">
+          <div style={{ fontSize: 12, color: "#999", marginBottom: 8 }}>조회할 날짜 선택</div>
+          {allDates.length === 0 && <div className="empty-sm">기록된 날짜가 없습니다.</div>}
+          {allDates.map(d => (
+            <button key={d} className={`sort-btn${viewDate === d ? " active" : ""}`}
+              style={{ margin: "3px" }}
+              onClick={() => { setViewDate(d); setShowDatePicker(false); }}>
+              {d === todayStr ? `오늘 (${d})` : d}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {myViewLogs.length === 0 && <div className="empty">해당 날짜의 작업 기록이 없습니다.</div>}
+      {myViewLogs.map((l, i) => (
         <div key={l.id} className="card">
           <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13 }}>
             <span style={{ fontWeight: 600 }}>#{i + 1} {l.tlSn}</span>
@@ -1579,8 +1634,8 @@ function DriverScreen({ currentUser, tls, workLogs, onStart, onEnd }) {
               : <span className="pill pill-amber">진행중</span>}
           </div>
           <div style={{ fontSize: 12, color: "#999", marginTop: 4 }}>
-            시작: {l.startedAt ? new Date(typeof l.startedAt === 'string' ? l.startedAt : l.startedAt?.toDate?.() || l.startedAt).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" }) : "-"}
-            {l.endedAt ? ` · 종료: ${new Date(typeof l.endedAt === 'string' ? l.endedAt : l.endedAt?.toDate?.() || l.endedAt).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" })}` : ""}
+            {l.date} · 시작: {fmtTime(l.startedAt)}
+            {l.endedAt ? ` · 종료: ${fmtTime(l.endedAt)}` : ""}
           </div>
         </div>
       ))}
