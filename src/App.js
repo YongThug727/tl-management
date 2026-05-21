@@ -1,13 +1,10 @@
 import React, { useState, useEffect, useRef } from "react";
 import {
   collection, doc, getDocs, setDoc, updateDoc, deleteDoc,
-  onSnapshot, addDoc, serverTimestamp, query, orderBy, enableIndexedDbPersistence
+  onSnapshot, addDoc, serverTimestamp, query, orderBy
 } from "firebase/firestore";
 import { db } from "./firebase";
 import "./App.css";
-
-// 오프라인 캐시 활성화
-enableIndexedDbPersistence(db).catch(() => {});
 
 const TL_SPECS = ["7.8m급", "10m급", "12m급", "기타"];
 const BLS = ["1BL", "2BL"];
@@ -283,7 +280,7 @@ export default function App() {
         <span className="header-icon">🏗</span>
         <h1>TL 장비 관리</h1>
         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          {offline && <span className="offline-badge">오프라인</span>}
+          {offline && <span className="offline-badge" title="전파 없음 - 작업 내용은 자동 저장 후 온라인 시 동기화됩니다">📵 오프라인</span>}
           {currentUser.bl && <span className="badge badge-bl">{currentUser.bl}</span>}
           <span className={`badge badge-${currentUser.role}`}>{currentUser.label}</span>
           <button className="btn-icon" onClick={doLogout} title="로그아웃">⎋</button>
