@@ -157,9 +157,10 @@ export default function App() {
   async function updateTL(id, data) { await updateDoc(doc(db, "tls", id), data); }
   async function deleteTL(id) { await deleteDoc(doc(db, "tls", id)); }
   async function toggleTodayUse(id, current) {
-    await updateDoc(doc(db, "tls", id), { todayUse: !current, todayPurpose: current ? "" : "" });
+    await updateDoc(doc(db, "tls", id), { todayUse: !current, todayPurpose: "", notUsedReason: "" });
   }
   async function setTodayPurpose(id, purpose) { await updateDoc(doc(db, "tls", id), { todayPurpose: purpose }); }
+  async function setNotUsedReason(id, reason) { await updateDoc(doc(db, "tls", id), { notUsedReason: reason }); }
 
   // 결재
   async function submitApproval(data) {
@@ -299,7 +300,7 @@ export default function App() {
       <main className="content">
         {activeTab === "overview" && <OverviewScreen tls={tls} teams={teams} approvals={approvals} currentUser={currentUser} />}
         {activeTab === "tl" && <TLScreen tls={tls} teams={teams} currentUser={currentUser} onAdd={addTL} onUpdate={updateTL} onDelete={deleteTL} />}
-        {activeTab === "today" && <TodayScreen tls={tls} currentUser={currentUser} onToggle={toggleTodayUse} onPurpose={setTodayPurpose} workLogs={workLogs} />}
+        {activeTab === "today" && <TodayScreen tls={tls} currentUser={currentUser} onToggle={toggleTodayUse} onPurpose={setTodayPurpose} onNotUsed={setNotUsedReason} workLogs={workLogs} />}
         {activeTab === "approval" && <ApprovalScreen approvals={approvals} tls={tls} onDecide={decideApproval} currentUser={currentUser} />}
         {activeTab === "rental" && <RentalScreen tls={tls} teams={teams} currentUser={currentUser} rentals={rentals} onRent={createRental} onReturn={returnRental} />}
         {activeTab === "request" && <RequestScreen tls={tls} teams={teams} currentUser={currentUser} onSubmit={submitApproval} approvals={approvals} />}
@@ -421,6 +422,7 @@ function TLCard({ t }) {
         {t.spec && <span className="pill pill-gray">{t.spec}</span>}
         {t.todayUse && <span className="pill pill-green">금일사용</span>}
         {t.todayUse && t.todayPurpose && <span className="pill pill-purple">{t.todayPurpose}</span>}
+        {!t.todayUse && t.notUsedReason && <span className="pill pill-amber">미사용: {t.notUsedReason}</span>}
         {t.isRented && <span className="pill pill-amber">대여중</span>}
       </div>
     </div>
@@ -970,7 +972,7 @@ function TLScreen({ tls, teams, currentUser, onAdd, onUpdate, onDelete }) {
 }
 
 // ── 금일 사용 ─────────────────────────────────────────────────────────────
-function TodayScreen({ tls, currentUser, onToggle, onPurpose, workLogs }) {
+function TodayScreen({ tls, currentUser, onToggle, onPurpose, onNotUsed, workLogs }) {
   const myTls = currentUser.role === "team"
     ? tls.filter(t => t.team === currentUser.team)
     : tls;
@@ -1003,9 +1005,19 @@ function TodayScreen({ tls, currentUser, onToggle, onPurpose, workLogs }) {
               </div>
               {t.status !== "정상" && <span className="status-tag"><span className={`dot dot-${t.status === "고장" ? "broken" : "check"}`} />{t.status}</span>}
             </div>
-            {t.todayUse && (
-              <input className="purpose-input" placeholder="사용 용도 입력..."
-                defaultValue={t.todayPurpose} onBlur={e => onPurpose(t.id, e.target.value)} />
+            {t.todayUse ? (
+              <div style={{ marginTop: 8 }}>
+                <div style={{ fontSize: 11, color: "#534AB7", fontWeight: 600, marginBottom: 4 }}>작업 내용</div>
+                <input className="purpose-input" placeholder="작업 내용을 입력해주세요"
+                  defaultValue={t.todayPurpose} onBlur={e => onPurpose(t.id, e.target.value)} />
+              </div>
+            ) : (
+              <div style={{ marginTop: 8 }}>
+                <div style={{ fontSize: 11, color: "#aaa", fontWeight: 600, marginBottom: 4 }}>미사용 사유</div>
+                <input className="purpose-input" placeholder="미사용 사유를 입력해주세요 (선택)"
+                  style={{ borderColor: "#f0f0f0", background: "#fafafa" }}
+                  defaultValue={t.notUsedReason || ""} onBlur={e => onNotUsed(t.id, e.target.value)} />
+              </div>
             )}
             {mins > 0 && (
               <div style={{ marginTop: 8 }}>
