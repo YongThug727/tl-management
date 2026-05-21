@@ -300,7 +300,7 @@ export default function App() {
       <main className="content">
         {activeTab === "overview" && <OverviewScreen tls={tls} teams={teams} approvals={approvals} currentUser={currentUser} />}
         {activeTab === "tl" && <TLScreen tls={tls} teams={teams} currentUser={currentUser} onAdd={addTL} onUpdate={updateTL} onDelete={deleteTL} />}
-        {activeTab === "today" && <TodayScreen tls={tls} currentUser={currentUser} onToggle={toggleTodayUse} onPurpose={setTodayPurpose} onNotUsed={setNotUsedReason} workLogs={workLogs} />}
+        {activeTab === "today" && <TodayScreen tls={tls} teams={teams} currentUser={currentUser} onToggle={toggleTodayUse} onPurpose={setTodayPurpose} onNotUsed={setNotUsedReason} workLogs={workLogs} />}
         {activeTab === "approval" && <ApprovalScreen approvals={approvals} tls={tls} onDecide={decideApproval} currentUser={currentUser} />}
         {activeTab === "rental" && <RentalScreen tls={tls} teams={teams} currentUser={currentUser} rentals={rentals} onRent={createRental} onReturn={returnRental} />}
         {activeTab === "request" && <RequestScreen tls={tls} teams={teams} currentUser={currentUser} onSubmit={submitApproval} approvals={approvals} />}
@@ -487,6 +487,7 @@ function OverviewScreen({ tls, teams, approvals, currentUser }) {
   const [expandedTeams, setExpandedTeams] = useState({});
 
   const isSojangnm = currentUser.role === "sojangnm";
+  const isAdmin = currentUser.role === "admin";
 
   const getBlTls = (bl) => bl === "전체" ? tls : tls.filter(t => {
     const team = teams.find(tm => tm.name === t.team);
@@ -668,9 +669,12 @@ function OverviewScreen({ tls, teams, approvals, currentUser }) {
   const isApprovalPopup = popup?.type === "결재대기";
   const pendingApprovals = approvals.filter(a => a.status === "대기" && (popup?.bl === "전체" || a.bl === popup?.bl));
 
+  // 관리자는 자기 BL만, 소장은 전체
+  const defaultBl = currentUser.role === "admin" ? currentUser.bl : "전체";
+
   return (
     <div>
-      <MetricsBlock bl="전체" />
+      <MetricsBlock bl={defaultBl} />
 
       {/* 팝업 */}
       {popup && !isTeamPopup && !isApprovalPopup && (
@@ -972,10 +976,12 @@ function TLScreen({ tls, teams, currentUser, onAdd, onUpdate, onDelete }) {
 }
 
 // ── 금일 사용 ─────────────────────────────────────────────────────────────
-function TodayScreen({ tls, currentUser, onToggle, onPurpose, onNotUsed, workLogs }) {
+function TodayScreen({ tls, currentUser, onToggle, onPurpose, onNotUsed, workLogs, teams }) {
   const myTls = currentUser.role === "team"
     ? tls.filter(t => t.team === currentUser.team)
-    : tls;
+    : currentUser.role === "admin"
+      ? tls.filter(t => { const team = teams?.find(tm => tm.name === t.team); return (t.bl || team?.bl) === currentUser.bl; })
+      : tls;
   const useCount = myTls.filter(t => t.todayUse).length;
   const today = new Date().toLocaleDateString("ko-KR", { month: "long", day: "numeric", weekday: "short" });
   const todayStr = new Date().toISOString().slice(0, 10);
