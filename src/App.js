@@ -11,6 +11,14 @@ const TL_FLOORS = ["B2F", "B1F", "1F", "2F", "3F", "4F", "5F"];
 const BLS = ["1BL", "2BL"];
 const WORK_HOURS = 8; // 일일 기준 작업시간
 
+const SYSTEM_ACCOUNTS = [
+  { id: "소장", pw: "1234", role: "sojangnm", label: "소장", bl: null },
+  { id: "1BL공사관리자", pw: "1234", role: "admin_construction", label: "1BL 공사관리자", bl: "1BL" },
+  { id: "1BL안전관리자", pw: "1234", role: "admin_safety", label: "1BL 안전관리자", bl: "1BL" },
+  { id: "2BL공사관리자", pw: "1234", role: "admin_construction", label: "2BL 공사관리자", bl: "2BL" },
+  { id: "2BL안전관리자", pw: "1234", role: "admin_safety", label: "2BL 안전관리자", bl: "2BL" },
+];
+
 // ── 역할별 네비게이션 ─────────────────────────────────────────────────────
 const NAV_TABS = {
   sojangnm: [
