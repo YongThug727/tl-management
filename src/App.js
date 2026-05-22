@@ -1109,11 +1109,10 @@ function TodayScreen({ tls, currentUser, onToggle, onPurpose, onNotUsed, workLog
 // ── 결재 ──────────────────────────────────────────────────────────────────
 function ApprovalScreen({ approvals, tls, onDecide, currentUser }) {
   // 소장: 전체 / 관리자: 자기 BL만 / 팀장: 없음
-  const canDecide = currentUser.role === "sojangnm" || currentUser.role === "admin";
+  const canDecide = ["sojangnm", "admin", "admin_construction", "admin_safety"].includes(currentUser.role);
   const myApprovals = currentUser.role === "sojangnm"
     ? approvals
     : approvals.filter(a => a.bl === currentUser.bl);
-  const canDecide = ["sojangnm", "admin", "admin_construction", "admin_safety"].includes(currentUser.role);
   const pending = myApprovals.filter(a => a.status === "대기");
   const done = myApprovals.filter(a => a.status !== "대기");
 
