@@ -1,5 +1,5 @@
 /* TL 장비 관리 앱 - Service Worker (오프라인 지원) */
-const CACHE_NAME = 'tl-manager-v1';
+const CACHE_NAME = 'tl-manager-v3';
 
 // 캐시할 앱 핵심 파일들
 const STATIC_ASSETS = [
