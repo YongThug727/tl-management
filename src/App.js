@@ -207,10 +207,10 @@ export default function App() {
   async function deleteAccount(id) { await deleteDoc(doc(db, "accounts", id)); }
 
   // 작업 로그
-  async function startWork(user, tlId) {
+  async function startWork(user, tlId, startedAt) {
     const tl = tls.find(t => t.id === tlId);
-    const now = new Date().toISOString(); // 클라이언트 로컬 시간 (오프라인에서도 정확)
-    await addDoc(collection(db, "workLogs"), {
+    const now = startedAt || new Date().toISOString();
+    const ref = await addDoc(collection(db, "workLogs"), {
       driverId: user.id,
       driverName: user.label,
       teamName: user.teamName || "",
@@ -222,28 +222,18 @@ export default function App() {
       durationMin: null,
       date: new Date().toISOString().slice(0, 10),
     });
+    return ref.id; // logId 반환 → localStorage에 저장
   }
-  async function endWork(logId, startedAt) {
-    const now = new Date();
-    const endedAt = now.toISOString();
-    // startedAt이 ISO 문자열, Firebase Timestamp, null 등 다양한 경우 안전하게 처리
-    let start;
-    if (!startedAt) {
-      // startedAt이 없으면 종료 불가 - 1분으로 기본값
-      start = new Date(now.getTime() - 60000);
-    } else if (typeof startedAt === 'string') {
-      start = new Date(startedAt);
-    } else if (startedAt?.toDate) {
-      start = startedAt.toDate();
-    } else {
-      start = new Date(startedAt);
-    }
-    // 음수나 비정상 값 방어
-    const diffMs = now - start;
-    const durationMin = diffMs > 0 && diffMs < 86400000 // 0~24시간 사이만 유효
-      ? Math.round(diffMs / 60000)
-      : 1; // 비정상이면 1분으로 처리
-    await updateDoc(doc(db, "workLogs", logId), { endedAt, durationMin });
+  async function endWork(logId, startedAt, durationMin) {
+    const endedAt = new Date().toISOString();
+    // durationMin은 DriverScreen에서 로컬 시각 기준으로 이미 계산된 값
+    const safeDuration = (durationMin && durationMin > 0 && durationMin < 1440)
+      ? durationMin : 1;
+    await updateDoc(doc(db, "workLogs", logId), {
+      endedAt,
+      startedAt: startedAt || endedAt, // startedAt도 확실히 저장
+      durationMin: safeDuration,
+    });
   }
 
   // 대여 함수
@@ -1481,23 +1471,35 @@ function DriverScreen({ currentUser, tls, workLogs, onStart, onEnd }) {
   const myTeamTls = tls.filter(t => t.team === currentUser.teamName);
   const todayStr = new Date().toISOString().slice(0, 10);
 
-  // 오프라인 종료 처리를 위한 로컬 상태
-  const [localEnded, setLocalEnded] = useState(false); // 오프라인 종료 즉시 반영용
+  // ── 핵심: 작업 시작 시각을 localStorage에 저장 ──
+  // Firebase startedAt은 오프라인 시 null/pending이므로 믿지 않음
+  // 로컬 스토리지의 시각을 단일 진실 공급원(source of truth)으로 사용
+  const LOCAL_KEY = `work_start_${currentUser.id}`;
+  const LOCAL_LOG_KEY = `work_logid_${currentUser.id}`;
+
+  const [isWorking, setIsWorking] = useState(() => {
+    // 앱 재시작 시 로컬 스토리지에서 진행 중 작업 복원
+    return !!localStorage.getItem(LOCAL_KEY);
+  });
+  const [workStartTime, setWorkStartTime] = useState(() => {
+    const saved = localStorage.getItem(LOCAL_KEY);
+    return saved ? new Date(saved) : null;
+  });
+  const [activeLogId, setActiveLogId] = useState(() => {
+    return localStorage.getItem(LOCAL_LOG_KEY) || null;
+  });
   const [elapsed, setElapsed] = useState(0);
   const timerRef = useRef(null);
-  const [viewDate, setViewDate] = useState(todayStr); // 조회 날짜
+  const [viewDate, setViewDate] = useState(todayStr);
   const [showDatePicker, setShowDatePicker] = useState(false);
-
-  // 오늘 로그
-  const myTodayLogs = workLogs.filter(l => l.driverId === currentUser.id && l.date === todayStr);
-  // 조회 날짜 로그
-  const myViewLogs = workLogs.filter(l => l.driverId === currentUser.id && l.date === viewDate);
-  // 진행 중 로그 (로컬 종료 상태 반영)
-  const activeLog = localEnded ? null : myTodayLogs.find(l => l.endedAt === null);
+  const [activeTlSn, setActiveTlSn] = useState(() => {
+    return localStorage.getItem(`work_tlsn_${currentUser.id}`) || "";
+  });
 
   // 날짜 파싱 헬퍼
   function parseTime(val) {
     if (!val) return null;
+    if (val instanceof Date) return val;
     if (typeof val === 'string') return new Date(val);
     if (val?.toDate) return val.toDate();
     return null;
@@ -1505,42 +1507,14 @@ function DriverScreen({ currentUser, tls, workLogs, onStart, onEnd }) {
 
   function fmtTime(val) {
     const d = parseTime(val);
-    return d ? d.toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" }) : "-";
+    return d && !isNaN(d) ? d.toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" }) : "-";
   }
 
   function fmtDate(dateStr) {
     if (!dateStr) return "";
-    const d = new Date(dateStr);
+    const d = new Date(dateStr + "T00:00:00");
     return d.toLocaleDateString("ko-KR", { month: "long", day: "numeric", weekday: "short" });
   }
-
-  useEffect(() => {
-    if (activeLog) {
-      setLocalEnded(false);
-      let start = parseTime(activeLog.startedAt) || new Date();
-      if (isNaN(start.getTime()) || start > new Date()) start = new Date();
-      timerRef.current = setInterval(() => {
-        setElapsed(Math.floor((new Date() - start) / 1000));
-      }, 1000);
-    } else {
-      clearInterval(timerRef.current);
-      setElapsed(0);
-    }
-    return () => clearInterval(timerRef.current);
-  }, [activeLog?.id, localEnded]);
-
-  // 종료 처리: 로컬 즉시 반영 후 Firebase 저장
-  async function handleEnd() {
-    if (!activeLog) return;
-    if (!window.confirm("작업을 종료하시겠습니까?")) return;
-    clearInterval(timerRef.current); // 타이머 즉시 정지
-    setLocalEnded(true);             // 화면 즉시 종료 상태로
-    setElapsed(0);
-    await onEnd(activeLog.id, activeLog.startedAt); // Firebase 백그라운드 저장
-  }
-
-  const todayMin = myTodayLogs.filter(l => l.durationMin != null).reduce((s, l) => s + l.durationMin, 0);
-  const todayRate = Math.min(Math.round((todayMin / (WORK_HOURS * 60)) * 100), 100);
 
   function fmt(sec) {
     const h = Math.floor(sec / 3600);
@@ -1549,8 +1523,84 @@ function DriverScreen({ currentUser, tls, workLogs, onStart, onEnd }) {
     return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
   }
 
-  // 보유 날짜 목록 (조회용)
-  const allDates = [...new Set(workLogs.filter(l => l.driverId === currentUser.id).map(l => l.date))].sort((a,b) => b.localeCompare(a));
+  // ── 타이머: workStartTime 기준 (로컬 시각) ──
+  useEffect(() => {
+    if (isWorking && workStartTime) {
+      timerRef.current = setInterval(() => {
+        const diff = Math.floor((new Date() - workStartTime) / 1000);
+        setElapsed(diff > 0 ? diff : 0);
+      }, 1000);
+    } else {
+      clearInterval(timerRef.current);
+      setElapsed(0);
+    }
+    return () => clearInterval(timerRef.current);
+  }, [isWorking, workStartTime]);
+
+  // ── 작업 시작 ──
+  async function handleStart(tl) {
+    if (!window.confirm(`${tl.sn} 작업을 시작하시겠습니까?`)) return;
+    const now = new Date();
+    const nowISO = now.toISOString();
+    // 1. 로컬 즉시 반영
+    setIsWorking(true);
+    setWorkStartTime(now);
+    setActiveTlSn(tl.sn);
+    localStorage.setItem(LOCAL_KEY, nowISO);
+    localStorage.setItem(`work_tlsn_${currentUser.id}`, tl.sn);
+    // 2. Firebase 저장 (백그라운드, 오프라인이면 나중에 동기화)
+    const logId = await onStart(currentUser, tl.id, nowISO);
+    if (logId) {
+      setActiveLogId(logId);
+      localStorage.setItem(LOCAL_LOG_KEY, logId);
+    }
+  }
+
+  // ── 작업 종료 ──
+  async function handleEnd() {
+    if (!isWorking || !workStartTime) return;
+    if (!window.confirm("작업을 종료하시겠습니까?")) return;
+    const now = new Date();
+    const durationMin = Math.round((now - workStartTime) / 60000);
+    // 1. 로컬 즉시 반영 (타이머 정지)
+    clearInterval(timerRef.current);
+    setIsWorking(false);
+    setWorkStartTime(null);
+    setElapsed(0);
+    localStorage.removeItem(LOCAL_KEY);
+    localStorage.removeItem(LOCAL_LOG_KEY);
+    localStorage.removeItem(`work_tlsn_${currentUser.id}`);
+    // 2. Firebase 저장 (logId 또는 Firebase에서 찾아서 저장)
+    const logId = activeLogId || workLogs.find(
+      l => l.driverId === currentUser.id && l.endedAt === null
+    )?.id;
+    setActiveLogId(null);
+    if (logId) {
+      await onEnd(logId, workStartTime.toISOString(), durationMin);
+    }
+  }
+
+  // ── Firebase 로그와 로컬 상태 동기화 ──
+  // 온라인 복귀 후 Firebase에 종료 기록이 있으면 로컬 상태도 정리
+  useEffect(() => {
+    if (!isWorking) return;
+    const fbLog = workLogs.find(l => l.driverId === currentUser.id && l.endedAt !== null && l.id === activeLogId);
+    if (fbLog) {
+      // Firebase에 이미 종료됨 → 로컬 상태 정리
+      setIsWorking(false);
+      setWorkStartTime(null);
+      localStorage.removeItem(LOCAL_KEY);
+      localStorage.removeItem(LOCAL_LOG_KEY);
+      localStorage.removeItem(`work_tlsn_${currentUser.id}`);
+    }
+  }, [workLogs]);
+
+  // 오늘 완료된 로그 (durationMin 있는 것)
+  const myTodayLogs = workLogs.filter(l => l.driverId === currentUser.id && l.date === todayStr && l.durationMin != null);
+  const myViewLogs = workLogs.filter(l => l.driverId === currentUser.id && l.date === viewDate);
+  const todayMin = myTodayLogs.reduce((s, l) => s + (l.durationMin || 0), 0);
+  const todayRate = Math.min(Math.round((todayMin / (WORK_HOURS * 60)) * 100), 100);
+  const allDates = [...new Set(workLogs.filter(l => l.driverId === currentUser.id).map(l => l.date))].sort((a, b) => b.localeCompare(a));
 
   return (
     <div>
@@ -1562,9 +1612,9 @@ function DriverScreen({ currentUser, tls, workLogs, onStart, onEnd }) {
           {myTeamTls.length > 0 && <span style={{ fontSize: 12, color: "#aaa", marginLeft: 6 }}>TL {myTeamTls.length}대</span>}
         </div>
 
-        {activeLog ? (
+        {isWorking ? (
           <>
-            <div style={{ fontSize: 12, color: "#888", marginBottom: 4 }}>작업 진행 중 — {activeLog.tlSn}</div>
+            <div style={{ fontSize: 12, color: "#888", marginBottom: 4 }}>작업 진행 중 — {activeTlSn}</div>
             <div style={{ fontSize: 48, fontWeight: 700, color: "#534AB7", letterSpacing: 2, marginBottom: 20 }}>
               {fmt(elapsed)}
             </div>
@@ -1579,7 +1629,7 @@ function DriverScreen({ currentUser, tls, workLogs, onStart, onEnd }) {
             {myTeamTls.length === 0 && <div style={{ fontSize: 13, color: "#E24B4A", marginBottom: 16 }}>배정된 TL이 없습니다.</div>}
             {myTeamTls.map(tl => (
               <button key={tl.id} className="group-btn" style={{ marginBottom: 8, padding: "12px 14px" }}
-                onClick={() => { if (window.confirm(`${tl.sn} 작업을 시작하시겠습니까?`)) { setLocalEnded(false); onStart(currentUser, tl.id); } }}>
+                onClick={() => handleStart(tl)}>
                 🏗 {tl.sn} <span style={{ fontSize: 12, color: "#aaa", marginLeft: 6 }}>{tl.location}</span>
               </button>
             ))}
@@ -1599,7 +1649,7 @@ function DriverScreen({ currentUser, tls, workLogs, onStart, onEnd }) {
         </div>
       </div>
 
-      {/* 작업 이력 조회 */}
+      {/* 작업 이력 */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
         <div className="section-title" style={{ margin: 0 }}>
           작업 이력 — {viewDate === todayStr ? "오늘" : fmtDate(viewDate)}
@@ -1609,7 +1659,6 @@ function DriverScreen({ currentUser, tls, workLogs, onStart, onEnd }) {
         </button>
       </div>
 
-      {/* 날짜 선택 */}
       {showDatePicker && (
         <div className="card mb12">
           <div style={{ fontSize: 12, color: "#999", marginBottom: 8 }}>조회할 날짜 선택</div>
