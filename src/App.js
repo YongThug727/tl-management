@@ -290,6 +290,38 @@ export default function App() {
     });
   }, [rentals]);
 
+  // 자정 가동률 자동 저장
+  useEffect(() => {
+    if (tls.length === 0 || teams.length === 0) return;
+    const today = new Date().toISOString().slice(0, 10);
+    const lastAutoSave = localStorage.getItem("tl_auto_history");
+    if (lastAutoSave === today) return; // 오늘 이미 저장됨
+    if (!lastAutoSave || lastAutoSave < today) {
+      // 자정이 지난 경우 어제 데이터를 저장
+      const yesterday = new Date();
+      yesterday.setDate(yesterday.getDate() - 1);
+      const yesterdayStr = yesterday.toISOString().slice(0, 10);
+      const snapshot = teams.map(team => {
+        const teamTls = tls.filter(t => t.team === team.name);
+        const todayLogs = workLogs.filter(l => l.date === yesterdayStr && teamTls.some(t => t.id === l.tlId) && l.durationMin != null);
+        const totalMin = todayLogs.reduce((s, l) => s + l.durationMin, 0);
+        const maxMin = WORK_HOURS * 60 * (teamTls.length || 1);
+        return {
+          team: team.name, bl: team.bl || "",
+          total: teamTls.length,
+          used: teamTls.filter(t => t.todayUse).length,
+          totalMin,
+          rateTime: Math.min(Math.round((totalMin / maxMin) * 100), 100),
+        };
+      });
+      setDoc(doc(db, "history", yesterdayStr), {
+        date: yesterdayStr, data: snapshot,
+        savedAt: serverTimestamp(), autoSaved: true
+      });
+      localStorage.setItem("tl_auto_history", today);
+    }
+  }, [tls, teams, workLogs]);
+
   // 자정 사용 현황 초기화
   useEffect(() => {
     if (tls.length === 0) return;
