@@ -506,7 +506,7 @@ function TLCard({ t }) {
         </span>
       </div>
       <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 6 }}>
-        {t.spec && <span className="pill pill-gray">{t.spec}</span>}
+        {t.spec && <span className="pill pill-gray" style={{ fontSize: 10, padding: "1px 6px" }}>{t.spec}</span>}
         {t.todayUse && <span className="pill pill-green">금일사용</span>}
         {t.todayUse && t.todayPurpose && <span className="pill pill-purple">{t.todayPurpose}</span>}
         {!t.todayUse && t.notUsedReason && <span className="pill pill-amber">미사용: {t.notUsedReason}</span>}
@@ -705,7 +705,7 @@ function OverviewScreen({ tls, teams, approvals, currentUser }) {
                               <div key={t.id} className="tl-row" style={{ padding: "6px 0" }}>
                                 <span className={`dot dot-${t.status === "정상" ? "ok" : t.status === "고장" ? "broken" : "check"}`} />
                                 <span className="tl-sn">{t.sn}</span>
-                                {t.spec && <span className="pill pill-gray">{t.spec}</span>}
+                                {t.spec && <span className="pill pill-gray" style={{ fontSize: 10, padding: "1px 6px" }}>{t.spec}</span>}
                                 <span className="tl-meta">{t.location}</span>
                                 {t.todayUse && <span className="pill pill-purple">사용중</span>}
                               </div>
@@ -739,7 +739,7 @@ function OverviewScreen({ tls, teams, approvals, currentUser }) {
                 <div key={t.id} className="tl-row">
                   <span className={`dot dot-${t.status === "정상" ? "ok" : t.status === "고장" ? "broken" : "check"}`} />
                   <span className="tl-sn">{t.sn}</span>
-                  {t.spec && <span className="pill pill-gray">{t.spec}</span>}
+                  {t.spec && <span className="pill pill-gray" style={{ fontSize: 10, padding: "1px 6px" }}>{t.spec}</span>}
                   <span className="tl-meta">{t.location}</span>
                   {t.todayUse && <span className="pill pill-purple">사용중</span>}
                 </div>
@@ -1035,7 +1035,7 @@ function TLScreen({ tls, teams, currentUser, onAdd, onUpdate, onDelete }) {
                 <div>
                   <div className="card-title">
                     {t.sn}
-                    {t.spec && <span className="pill pill-gray" style={{ marginLeft: 6 }}>{t.spec}</span>}
+                    {t.spec && <span className="pill pill-gray" style={{ marginLeft: 6, fontSize: 10, padding: "1px 6px" }}>{t.spec}</span>}
                     {t.bl && <span className="pill pill-bl" style={{ marginLeft: 4 }}>{t.bl}</span>}
                   </div>
                   <div className="card-sub">{t.team} · {t.floor ? t.floor + " " : ""}{t.location}</div>
@@ -1105,8 +1105,8 @@ function TodayScreen({ tls, currentUser, onToggle, onPurpose, onNotUsed, workLog
             <div className="today-row">
               <button className={`toggle ${t.todayUse ? "on" : ""}`} onClick={() => canEdit && onToggle(t.id, t.todayUse)} style={{ opacity: canEdit ? 1 : 0.5, cursor: canEdit ? "pointer" : "not-allowed" }} />
               <div className="flex1">
-                <div className="tl-sn">{t.sn} {t.spec && <span className="pill pill-gray">{t.spec}</span>}</div>
-                <div className="tl-meta">{t.team} · {t.location}</div>
+                <div className="tl-sn">{t.sn}</div>
+                <div className="tl-meta">{t.team} · {t.floor ? t.floor + " " : ""}{t.location}</div>
               </div>
               {t.status !== "정상" && <span className="status-tag"><span className={`dot dot-${t.status === "고장" ? "broken" : "check"}`} />{t.status}</span>}
             </div>
