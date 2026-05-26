@@ -757,7 +757,8 @@ function OverviewScreen({ tls, teams, approvals, currentUser }) {
   const pendingApprovals = approvals.filter(a => a.status === "대기" && (popup?.bl === "전체" || a.bl === popup?.bl));
 
   // 관리자는 자기 BL만, 소장은 전체
-  const defaultBl = currentUser.role === "admin" ? currentUser.bl : "전체";
+  const isAdminRole = ["admin", "admin_construction", "admin_safety"].includes(currentUser.role);
+  const defaultBl = isAdminRole ? currentUser.bl : "전체";
 
   return (
     <div>
@@ -822,10 +823,10 @@ function TLScreen({ tls, teams, currentUser, onAdd, onUpdate, onDelete }) {
 
   const myTls = isTeam
     ? tls.filter(t => t.team === currentUser.team)
-    : currentUser.role === "admin"
-      ? tls.filter(t => { const team = teams.find(tm => tm.name === t.team); return team?.bl === currentUser.bl; })
-      : isSojangnm
-        ? (blFilter === "전체" ? [...tls] : tls.filter(t => { const team = teams.find(tm => tm.name === t.team); return (t.bl || team?.bl) === blFilter; }))
+    : isSojangnm
+      ? (blFilter === "전체" ? [...tls] : tls.filter(t => { const team = teams.find(tm => tm.name === t.team); return (t.bl || team?.bl) === blFilter; }))
+      : ["admin", "admin_construction", "admin_safety"].includes(currentUser.role)
+        ? tls.filter(t => { const team = teams.find(tm => tm.name === t.team); return (t.bl || team?.bl) === currentUser.bl; })
         : [...tls];
 
   const [statusFilter, setStatusFilter] = useState("전체");
@@ -893,7 +894,7 @@ function TLScreen({ tls, teams, currentUser, onAdd, onUpdate, onDelete }) {
     setEditingId(null);
   }
 
-  const availableTeams = currentUser.role === "admin"
+  const availableTeams = ["admin", "admin_construction", "admin_safety"].includes(currentUser.role)
     ? teams.filter(t => t.bl === currentUser.bl)
     : teams;
 
@@ -1078,7 +1079,7 @@ function TodayScreen({ tls, currentUser, onToggle, onPurpose, onNotUsed, workLog
   const myTls = currentUser.role === "team"
     ? tls.filter(t => t.team === currentUser.team)
     : ["admin", "admin_construction", "admin_safety"].includes(currentUser.role)
-      ? tls.filter(t => { const team = teams?.find(tm => tm.name === t.team); return (t.bl || team?.bl) === currentUser.bl; })
+      ? tls.filter(t => (t.bl || teams?.find(tm => tm.name === t.team)?.bl) === currentUser.bl)
       : tls;
   const useCount = myTls.filter(t => t.todayUse).length;
   const today = new Date().toLocaleDateString("ko-KR", { month: "long", day: "numeric", weekday: "short" });
@@ -1165,7 +1166,7 @@ function ApprovalScreen({ approvals, tls, onDecide, currentUser }) {
 
   return (
     <div>
-      {currentUser.role === "admin" && (
+      {["admin", "admin_construction", "admin_safety"].includes(currentUser.role) && (
         <div className="alert alert-info mb12" style={{ fontSize: 12 }}>
           {currentUser.bl} 소속 결재 요청만 표시됩니다.
         </div>
@@ -1421,7 +1422,11 @@ function HistoryScreen({ tls, teams, workLogs, currentUser }) {
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [rateMode, setRateMode] = useState("count"); // count | time
-  const [blTab, setBlTab] = useState("1BL"); // 1BL | 2BL | 전체
+  const [blTab, setBlTab] = useState(
+    ["admin", "admin_construction", "admin_safety"].includes(currentUser.role)
+      ? currentUser.bl
+      : "1BL"
+  ); // 1BL | 2BL | 전체
 
   useEffect(() => { fetchHistory(); }, []);
 
