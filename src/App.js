@@ -687,6 +687,53 @@ function OverviewScreen({ tls, teams, approvals, currentUser }) {
           ))}
         </div>
 
+        {/* 층별 TL 현황 */}
+        <div className="section-title">층별 현황</div>
+        <div className="card mb12">
+          {[...TL_FLOORS].reverse().map((floor, fi, arr) => {
+            const floorTls = ftls.filter(t => t.floor === floor);
+            if (floorTls.length === 0) return null;
+            const using = floorTls.filter(t => t.todayUse).length;
+            const broken = floorTls.filter(t => t.status === "고장").length;
+            const check = floorTls.filter(t => t.status === "점검중").length;
+            const [expanded, setExpanded] = React.useState(false);
+            return (
+              <div key={floor} style={{ borderBottom: fi < arr.length - 1 ? "1px solid #f0f0f0" : "none" }}>
+                <div className="metric-click"
+                  style={{ display: "flex", alignItems: "center", padding: "10px 4px", cursor: "pointer" }}
+                  onClick={() => setExpanded(!expanded)}>
+                  <span style={{ fontSize: 13, fontWeight: 600, width: 40, color: "#534AB7" }}>{floor}</span>
+                  <span style={{ fontSize: 13, flex: 1, color: "#444" }}>총 {floorTls.length}대</span>
+                  <div style={{ display: "flex", gap: 6, marginRight: 8 }}>
+                    {using > 0 && <span className="pill pill-green" style={{ fontSize: 11 }}>사용 {using}</span>}
+                    {broken > 0 && <span className="pill pill-red" style={{ fontSize: 11 }}>고장 {broken}</span>}
+                    {check > 0 && <span className="pill pill-amber" style={{ fontSize: 11 }}>점검 {check}</span>}
+                  </div>
+                  <span style={{ fontSize: 11, color: "#aaa" }}>{expanded ? "▲" : "▼"}</span>
+                </div>
+                {expanded && (
+                  <div style={{ paddingBottom: 8, paddingLeft: 4 }}>
+                    {floorTls.map(t => {
+                      const dotC = t.status === "고장" ? "broken" : t.status === "점검중" ? "check" : t.todayUse ? "ok" : "unused";
+                      const stLabel = t.status === "고장" ? "고장" : t.status === "점검중" ? "점검" : t.todayUse ? "작업중" : "미사용";
+                      return (
+                        <div key={t.id} className="tl-row" style={{ padding: "5px 0" }}>
+                          <span className={`dot dot-${dotC}`} />
+                          <span className="tl-sn">{t.sn}</span>
+                          {t.spec && <span className="pill pill-gray" style={{ fontSize: 10, padding: "1px 5px" }}>{t.spec}</span>}
+                          <span className="tl-meta">{t.team}</span>
+                          {t.bl && bl === "전체" && <span className="pill pill-bl" style={{ fontSize: 10 }}>{t.bl}</span>}
+                          <span style={{ fontSize: 11, color: dotC === "ok" ? "#1D9E75" : dotC === "broken" ? "#E24B4A" : dotC === "check" ? "#EF9F27" : "#aaa", marginLeft: "auto" }}>{stLabel}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+
         {/* 팀별 현황 - 2단계 접기/펼치기 (공구 → 팀 → TL) */}
         <div className="section-title">팀별 현황</div>
         {["1BL", "2BL"].map(blKey => {
@@ -1771,12 +1818,31 @@ function GuideScreen({ currentUser, tls, workLogs, onStart, onEnd }) {
   const [viewDate, setViewDate] = useState(todayStr);
   const [showDatePicker, setShowDatePicker] = useState(false);
 
-  // 타이머
+  // 타이머 + 8시간 자동 종료
   useEffect(() => {
     timerRef.current = setInterval(() => {
-      setElapsed(slots.map(s =>
-        s.active && s.startTime ? Math.max(0, Math.floor((new Date() - s.startTime) / 1000)) : 0
-      ));
+      const now = new Date();
+      const newElapsed = slots.map(s =>
+        s.active && s.startTime ? Math.max(0, Math.floor((now - s.startTime) / 1000)) : 0
+      );
+      setElapsed(newElapsed);
+      // 8시간(28800초) 초과 시 자동 종료
+      slots.forEach((s, i) => {
+        if (s.active && s.startTime && (now - s.startTime) >= WORK_HOURS * 3600 * 1000) {
+          const durationMin = WORK_HOURS * 60;
+          const logId = s.logId;
+          localStorage.removeItem(slotKey(i));
+          localStorage.removeItem(logKey(i));
+          localStorage.removeItem(snKey(i));
+          localStorage.removeItem(tlIdKey(i));
+          setSlots(prev => prev.map((ss, ii) => ii === i
+            ? { active: false, startTime: null, logId: null, tlSn: "", tlId: null }
+            : ss
+          ));
+          if (logId) onEnd(logId, s.startTime.toISOString(), durationMin);
+          alert(`${s.tlSn} 작업이 8시간 경과로 자동 종료되었습니다.`);
+        }
+      });
     }, 1000);
     return () => clearInterval(timerRef.current);
   }, [slots]);
