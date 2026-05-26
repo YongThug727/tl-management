@@ -1250,7 +1250,7 @@ function RequestScreen({ tls, teams, currentUser, onSubmit, approvals }) {
   const [form, setForm] = useState({ tlId: "", to: "", reason: "", newSn: "", newSpec: "10m급", newLocation: "", newInDate: "" });
   const myTls = tls.filter(t => t.team === currentUser.team);
   const myApprovals = approvals.filter(a => a.requester === currentUser.id);
-  const otherTeams = teams.filter(t => t.name !== currentUser.team);
+  const otherTeams = teams.filter(t => t.name !== currentUser.team && t.bl === currentUser.bl);
 
   async function handleSubmit() {
     if (!form.reason) { alert("요청 사유를 입력해주세요."); return; }
@@ -1499,11 +1499,12 @@ function HistoryScreen({ tls, teams, workLogs, currentUser }) {
     return true;
   });
 
-  // 공구 탭에 따라 data 필터링
+  // 공구 탭에 따라 data 필터링 (관리자는 항상 자기 BL만)
   function filterData(data) {
     if (!data) return [];
-    if (blTab === "전체") return data;
-    return data.filter(d => d.bl === blTab);
+    const activeBl = currentUser.role === "sojangnm" ? blTab : currentUser.bl;
+    if (activeBl === "전체") return data;
+    return data.filter(d => d.bl === activeBl);
   }
 
   if (loading) return <div className="empty">불러오는 중...</div>;
@@ -1514,13 +1515,19 @@ function HistoryScreen({ tls, teams, workLogs, currentUser }) {
         {saving ? "저장 중..." : "📋 오늘 현황 기록 저장"}
       </button>
 
-      {/* 공구 탭 */}
-      <div className="sort-bar" style={{ marginBottom: 10 }}>
-        <span className="sort-label">공구</span>
-        {["1BL", "2BL", "전체"].map(bl => (
-          <button key={bl} className={`sort-btn${blTab === bl ? " active" : ""}`} onClick={() => setBlTab(bl)}>{bl}</button>
-        ))}
-      </div>
+      {/* 공구 탭 - 소장만 전체/1BL/2BL 선택 가능, 관리자는 자기 BL만 */}
+      {currentUser.role === "sojangnm" ? (
+        <div className="sort-bar" style={{ marginBottom: 10 }}>
+          <span className="sort-label">공구</span>
+          {["1BL", "2BL", "전체"].map(bl => (
+            <button key={bl} className={`sort-btn${blTab === bl ? " active" : ""}`} onClick={() => setBlTab(bl)}>{bl}</button>
+          ))}
+        </div>
+      ) : (
+        <div className="alert alert-info mb10" style={{ fontSize: 12 }}>
+          {currentUser.bl} 가동률만 표시됩니다.
+        </div>
+      )}
 
       {/* 기준 선택 탭 */}
       <div className="sort-bar" style={{ marginBottom: 12 }}>
@@ -1541,7 +1548,7 @@ function HistoryScreen({ tls, teams, workLogs, currentUser }) {
       </div>
 
       <div className="section-title">
-        {blTab} 일별 TL 가동률 ({filtered.length}건) · {rateMode === "count" ? "대수 기준" : "시간 기준"}
+        {currentUser.role === "sojangnm" ? blTab : currentUser.bl} 일별 TL 가동률 ({filtered.length}건) · {rateMode === "count" ? "대수 기준" : "시간 기준"}
       </div>
       {filtered.length === 0 && <div className="empty">해당 기간의 기록이 없습니다.</div>}
 
@@ -1576,7 +1583,7 @@ function HistoryScreen({ tls, teams, workLogs, currentUser }) {
                 <div key={i} style={{ marginBottom: 10 }}>
                   <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: 4 }}>
                     <span style={{ fontWeight: 600 }}>{d.team}
-                      {blTab === "전체" && d.bl && <span style={{ color: "#aaa", fontSize: 11 }}> ({d.bl})</span>}
+                      {currentUser.role === "sojangnm" && blTab === "전체" && d.bl && <span style={{ color: "#aaa", fontSize: 11 }}> ({d.bl})</span>}
                     </span>
                     <span style={{ color: "#666" }}>
                       {rateMode === "count"
