@@ -382,12 +382,30 @@ export default function App() {
         </div>
       </header>
       <nav className="nav">
-        {navTabs.map(tab => (
-          <button key={tab.id} className={activeTab === tab.id ? "active" : ""} onClick={() => setActiveTab(tab.id)}>
-            <span className="nav-icon">{tab.icon}</span>
-            <span>{tab.label}</span>
-          </button>
-        ))}
+        {navTabs.map(tab => {
+          const isApproval = tab.id === "approval";
+          const pendingCount = isApproval
+            ? approvals.filter(a => a.status === "대기" &&
+                (currentUser.role === "sojangnm" || a.bl === currentUser.bl)).length
+            : 0;
+          return (
+            <button key={tab.id} className={activeTab === tab.id ? "active" : ""} onClick={() => setActiveTab(tab.id)}
+              style={{ position: "relative" }}>
+              <span className="nav-icon">{tab.icon}</span>
+              <span>{tab.label}</span>
+              {isApproval && pendingCount > 0 && (
+                <span style={{
+                  position: "absolute", top: 4, right: 4,
+                  background: "#E24B4A", color: "#fff",
+                  borderRadius: "50%", width: 16, height: 16,
+                  fontSize: 10, fontWeight: 700,
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  lineHeight: 1,
+                }}>{pendingCount > 9 ? "9+" : pendingCount}</span>
+              )}
+            </button>
+          );
+        })}
       </nav>
       <main className="content">
         {activeTab === "overview" && <OverviewScreen tls={tls} teams={teams} approvals={approvals} currentUser={currentUser} />}
@@ -1355,10 +1373,15 @@ function RequestScreen({ tls, teams, currentUser, onSubmit, onCancel, approvals 
   const myTls = tls.filter(t => t.team === currentUser.team).sort((a,b) => (a.sn||"").localeCompare(b.sn||""));
   const myApprovals = approvals.filter(a => a.requester === currentUser.id);
   const otherTeams = teams.filter(t => t.name !== currentUser.team && t.bl === currentUser.bl);
+  // 현재 대기 중인 결재의 TL ID 목록
+  const pendingTlIds = new Set(approvals.filter(a => a.status === "대기" && a.tlId).map(a => a.tlId));
 
   async function handleSubmit() {
     if (!form.reason) { alert("요청 사유를 입력해주세요."); return; }
     if (type !== "반입" && !form.tlId) { alert("대상 TL을 선택해주세요."); return; }
+    if (type !== "반입" && pendingTlIds.has(form.tlId)) {
+      alert("이미 결재 진행 중인 TL입니다.\n기존 요청을 철회 후 다시 요청해주세요."); return;
+    }
     if (type === "이관" && !form.to) { alert("목적지 팀을 선택해주세요."); return; }
     if (type === "반입" && !form.newSn) { alert("일련번호를 입력해주세요."); return; }
     await onSubmit({ type, from: currentUser.team, bl: currentUser.bl, requester: currentUser.id, ...form });
@@ -1402,7 +1425,11 @@ function RequestScreen({ tls, teams, currentUser, onSubmit, onCancel, approvals 
             <label>대상 TL</label>
             <select value={form.tlId} onChange={e => setForm({ ...form, tlId: e.target.value })}>
               <option value="">선택해주세요</option>
-              {myTls.map(t => <option key={t.id} value={t.id}>{t.sn} ({t.location})</option>)}
+              {myTls.map(t => (
+                <option key={t.id} value={t.id} disabled={pendingTlIds.has(t.id)}>
+                  {t.sn} ({t.location}){pendingTlIds.has(t.id) ? " — 결재 진행 중" : ""}
+                </option>
+              ))}
             </select>
           </>
         )}
