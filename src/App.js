@@ -91,7 +91,7 @@ export default function App() {
     const unsubs = [
       onSnapshot(collection(db, "accounts"), snap => setAccounts(snap.docs.map(d => ({ id: d.id, ...d.data() })))),
       onSnapshot(collection(db, "teams"), snap => setTeams(snap.docs.map(d => ({ id: d.id, ...d.data() })))),
-      onSnapshot(collection(db, "tls"), snap => setTls(snap.docs.map(d => ({ id: d.id, ...d.data() })))),
+      onSnapshot(collection(db, "tls"), snap => setTls(snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a,b) => (a.sn||"").localeCompare(b.sn||"")))),
       onSnapshot(query(collection(db, "approvals"), orderBy("createdAt", "desc")), snap => setApprovals(snap.docs.map(d => ({ id: d.id, ...d.data() })))),
       onSnapshot(query(collection(db, "workLogs"), orderBy("startedAt", "desc")), snap => setWorkLogs(snap.docs.map(d => ({ id: d.id, ...d.data() })))),
       onSnapshot(query(collection(db, "rentals"), orderBy("createdAt", "desc")), snap => setRentals(snap.docs.map(d => ({ id: d.id, ...d.data() })))),
@@ -411,9 +411,17 @@ function LoginScreen({ accounts, onLogin }) {
   const [loading, setLoading] = useState(false);
 
   const sojangnm = accounts.filter(a => a.role === "sojangnm");
+  const roleOrder = { admin_construction: 0, admin_safety: 0, admin: 0, team: 1, guide: 2, driver: 2 };
   const groupAccounts = group === "소장"
     ? sojangnm
-    : accounts.filter(a => a.bl === group && a.role !== "sojangnm");
+    : accounts
+        .filter(a => a.bl === group && a.role !== "sojangnm")
+        .sort((a, b) => {
+          const oa = roleOrder[a.role] ?? 9;
+          const ob = roleOrder[b.role] ?? 9;
+          if (oa !== ob) return oa - ob;
+          return (a.label || a.id).localeCompare(b.label || b.id);
+        });
 
   async function handleLogin() {
     if (!pw) { setErr("비밀번호를 입력해주세요."); return; }
@@ -479,11 +487,27 @@ function LoginScreen({ accounts, onLogin }) {
         <>
           <div className="section-title" style={{ marginTop: 0 }}>{group} — 계정 선택</div>
           {groupAccounts.length === 0 && <div className="empty" style={{ padding: "16px 0" }}>등록된 계정이 없습니다.</div>}
-          {groupAccounts.map(a => (
-            <button key={a.id} className="group-btn" onClick={() => { setRoleId(a.id); setStep("login"); setErr(""); }}>
-              {roleLabel(a.role) === "TL 유도원" ? "🦺" : roleLabel(a.role) === "관리자" || roleLabel(a.role) === "공사관리자" || roleLabel(a.role) === "안전관리자" ? "🔧" : "👷"} {a.label || a.id} <span style={{ fontSize: 11, color: "#aaa", marginLeft: 4 }}>({roleLabel(a.role)})</span>
-            </button>
-          ))}
+          {(() => {
+            const groups = [
+              { label: "관리자", roles: ["admin_construction", "admin_safety", "admin"], icon: "🔧" },
+              { label: "팀장", roles: ["team"], icon: "👷" },
+              { label: "유도원", roles: ["guide", "driver"], icon: "🦺" },
+            ];
+            return groups.map(g => {
+              const accs = groupAccounts.filter(a => g.roles.includes(a.role));
+              if (accs.length === 0) return null;
+              return (
+                <div key={g.label}>
+                  <div style={{ fontSize: 11, color: "#aaa", fontWeight: 600, marginTop: 12, marginBottom: 4, paddingLeft: 2 }}>{g.label}</div>
+                  {accs.map(a => (
+                    <button key={a.id} className="group-btn" onClick={() => { setRoleId(a.id); setStep("login"); setErr(""); }}>
+                      {g.icon} {a.label || a.id} <span style={{ fontSize: 11, color: "#aaa", marginLeft: 4 }}>({roleLabel(a.role)})</span>
+                    </button>
+                  ))}
+                </div>
+              );
+            });
+          })()}
           <button className="btn full mt8" onClick={() => { setStep("group"); setGroup(""); }}>← 뒤로</button>
         </>
       )}
@@ -837,7 +861,7 @@ function OverviewScreen({ tls, teams, approvals, currentUser }) {
       {/* 팝업 */}
       {popup && !isTeamPopup && !isApprovalPopup && (
         <Popup title={`${popup.type} TL 목록`} count={popupTls.length} onClose={() => setPopup(null)}>
-          {popupTls.map(t => <TLCard key={t.id} t={t} />)}
+          {[...popupTls].sort((a,b) => (a.sn||"").localeCompare(b.sn||"")).map(t => <TLCard key={t.id} t={t} />)}
         </Popup>
       )}
       {popup && isTeamPopup && (
@@ -1176,11 +1200,12 @@ function TLScreen({ tls, teams, currentUser, onAdd, onUpdate, onDelete }) {
 // ── 금일 사용 ─────────────────────────────────────────────────────────────
 function TodayScreen({ tls, currentUser, onToggle, onPurpose, onNotUsed, workLogs, teams }) {
   const canEdit = ["team", "admin_safety"].includes(currentUser.role);
-  const myTls = currentUser.role === "team"
+  const myTlsRaw = currentUser.role === "team"
     ? tls.filter(t => t.team === currentUser.team)
     : ["admin", "admin_construction", "admin_safety"].includes(currentUser.role)
       ? tls.filter(t => (t.bl || teams?.find(tm => tm.name === t.team)?.bl) === currentUser.bl)
       : tls;
+  const myTls = [...myTlsRaw].sort((a,b) => (a.sn||"").localeCompare(b.sn||""));
   const useCount = myTls.filter(t => t.todayUse).length;
   const today = new Date().toLocaleDateString("ko-KR", { month: "long", day: "numeric", weekday: "short" });
   const todayStr = new Date().toISOString().slice(0, 10);
@@ -1319,7 +1344,7 @@ function ApprovalCard({ approval: a, showBtn, onDecide, tls }) {
 function RequestScreen({ tls, teams, currentUser, onSubmit, approvals }) {
   const [type, setType] = useState("이관");
   const [form, setForm] = useState({ tlId: "", to: "", reason: "", newSn: "", newSpec: "10m급", newLocation: "", newInDate: "" });
-  const myTls = tls.filter(t => t.team === currentUser.team);
+  const myTls = tls.filter(t => t.team === currentUser.team).sort((a,b) => (a.sn||"").localeCompare(b.sn||""));
   const myApprovals = approvals.filter(a => a.requester === currentUser.id);
   const otherTeams = teams.filter(t => t.name !== currentUser.team && t.bl === currentUser.bl);
 
@@ -1415,7 +1440,7 @@ function RentalScreen({ tls, teams, currentUser, rentals, onRent, onReturn }) {
   const [tlId, setTlId] = useState("");
   const today = new Date().toISOString().slice(0, 10);
 
-  const myTls = tls.filter(t => t.team === currentUser.team && !t.isRented);
+  const myTls = tls.filter(t => t.team === currentUser.team && !t.isRented).sort((a,b) => (a.sn||"").localeCompare(b.sn||""));
   const otherTeams = teams.filter(t => t.name !== currentUser.team && t.bl === currentUser.bl);
 
   // 내가 빌려준 것 (오늘)
