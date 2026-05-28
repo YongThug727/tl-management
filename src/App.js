@@ -2063,21 +2063,32 @@ function GuideScreen({ currentUser, tls, workLogs, onStart, onEnd }) {
       ? { active: false, startTime: null, logId: null, tlSn: "", tlId: null }
       : s
     ));
+    setCheckModal(null);
     if (logId) await onEnd(logId, slot.startTime.toISOString(), durationMin);
   }
 
   async function confirmStart(slotIdx, tl, sn) {
     const now = new Date();
     const nowISO = now.toISOString();
-    const logId = await onStart(currentUser, tl.id, nowISO);
+
+    // 1. localStorage 즉시 저장 (오프라인 대비)
     localStorage.setItem(slotKey(slotIdx), nowISO);
     localStorage.setItem(snKey(slotIdx), sn);
     localStorage.setItem(tlIdKey(slotIdx), tl.id);
-    if (logId) localStorage.setItem(logKey(slotIdx), logId);
+
+    // 2. 화면 즉시 업데이트 (타이머 바로 시작, 오프라인이어도)
     setSlots(prev => prev.map((s, i) => i === slotIdx
-      ? { active: true, startTime: now, logId: logId || null, tlSn: sn, tlId: tl.id }
+      ? { active: true, startTime: now, logId: null, tlSn: sn, tlId: tl.id }
       : s
     ));
+    setCheckModal(null);
+
+    // 3. Firebase 백그라운드 저장 (온라인 되면 자동 동기화)
+    const logId = await onStart(currentUser, tl.id, nowISO);
+    if (logId) {
+      localStorage.setItem(logKey(slotIdx), logId);
+      setSlots(prev => prev.map((s, i) => i === slotIdx ? { ...s, logId } : s));
+    }
   }
 
   const activeCount = slots.filter(s => s.active).length;
@@ -2100,61 +2111,6 @@ function GuideScreen({ currentUser, tls, workLogs, onStart, onEnd }) {
             {scanError && <div className="alert alert-warn" style={{ margin: 12 }}>{scanError}</div>}
             <div style={{ padding: 12 }}>
               <button className="btn full" onClick={stopScan}>취소</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* 체크리스트 모달 */}
-      {checkModal && (
-        <div className="modal-bg">
-          <div className="modal" style={{ maxWidth: 380 }}>
-            <div className="modal-title" style={{ fontSize: 15 }}>
-              {checkModal.type === "start"
-                ? `✅ 작업 시작 전 확인 — ${checkModal.tl?.sn}`
-                : `✅ 작업 종료 전 확인 — ${checkModal.tlSn}`}
-            </div>
-            <div className="alert alert-info mb12" style={{ fontSize: 12 }}>
-              {checkModal.type === "start" ? "작업 시작 전" : "작업 종료 전"} 아래 항목을 모두 확인해주세요.
-            </div>
-            {(checkModal.type === "start" ? START_CHECKS : END_CHECKS).map((item, i) => (
-              <div key={i}
-                onClick={() => setCheckModal(prev => ({
-                  ...prev,
-                  checks: prev.checks.map((c, ci) => ci === i ? !c : c)
-                }))}
-                style={{
-                  display: "flex", alignItems: "center", gap: 12,
-                  padding: "12px 4px",
-                  borderBottom: i < 2 ? "1px solid #f0f0f0" : "none",
-                  cursor: "pointer",
-                }}>
-                <div style={{
-                  width: 24, height: 24, borderRadius: 6, flexShrink: 0,
-                  border: checkModal.checks[i] ? "none" : "2px solid #ccc",
-                  background: checkModal.checks[i] ? "#1D9E75" : "#fff",
-                  display: "flex", alignItems: "center", justifyContent: "center",
-                  transition: "all 0.15s",
-                }}>
-                  {checkModal.checks[i] && <span style={{ color: "#fff", fontSize: 14, fontWeight: 700 }}>✓</span>}
-                </div>
-                <span style={{ fontSize: 14, fontWeight: 500, lineHeight: 1.4, color: checkModal.checks[i] ? "#1D9E75" : "#333" }}>
-                  {item}
-                </span>
-              </div>
-            ))}
-            <div className="btn-row" style={{ marginTop: 16 }}>
-              <button
-                className="btn btn-primary flex1"
-                disabled={!checkModal.checks.every(c => c)}
-                style={{ opacity: checkModal.checks.every(c => c) ? 1 : 0.4 }}
-                onClick={() => {
-                  if (checkModal.type === "start") confirmStart(checkModal.tl, checkModal.slotIdx);
-                  else confirmEnd(checkModal.slotIdx);
-                }}>
-                {checkModal.type === "start" ? "▶ 작업 시작" : "⏹ 작업 종료"}
-              </button>
-              <button className="btn flex1" onClick={() => setCheckModal(null)}>취소</button>
             </div>
           </div>
         </div>
