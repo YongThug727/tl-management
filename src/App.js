@@ -326,25 +326,28 @@ export default function App() {
     }
   }, [tls, teams, workLogs]);
 
-  // 자정 사용 현황 초기화
+// 자정 사용 현황 초기화 (Firebase 기반)
   useEffect(() => {
     if (tls.length === 0) return;
     const today = new Date().toISOString().slice(0, 10);
-    const lastReset = localStorage.getItem("tl_last_reset");
-    if (lastReset === today) return; // 오늘 이미 초기화됨
-    // 어제 또는 그 이전 날짜면 초기화
-    if (lastReset && lastReset < today) {
-      tls.forEach(async tl => {
-        if (tl.todayUse || tl.todayPurpose || tl.notUsedReason) {
-          await updateDoc(doc(db, "tls", tl.id), {
-            todayUse: false,
-            todayPurpose: "",
-            notUsedReason: "",
-          });
+
+    async function checkAndReset() {
+      try {
+        const resetSnap = await getDocs(collection(db, "system"));
+        const lastReset = resetSnap.docs.find(d => d.id === "daily_reset")?.data()?.date;
+        if (lastReset === today) return;
+        if (!lastReset || lastReset < today) {
+          await setDoc(doc(db, "system", "daily_reset"), { date: today });
+          const toReset = tls.filter(tl => tl.todayUse || tl.todayPurpose || tl.notUsedReason);
+          for (const tl of toReset) {
+            await updateDoc(doc(db, "tls", tl.id), {
+              todayUse: false, todayPurpose: "", notUsedReason: "",
+            });
+          }
         }
-      });
+      } catch(e) { console.warn("초기화 확인 실패:", e); }
     }
-    localStorage.setItem("tl_last_reset", today);
+    checkAndReset();
   }, [tls]);
 
   useEffect(() => {
